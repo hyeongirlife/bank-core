@@ -8,7 +8,10 @@ import java.time.LocalDateTime
 @Table(name = "product")
 data class Product(
     @Id
-    @Column(name = "code", length = 20)
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    val id: Long? = null,
+
+    @Column(name = "code", length = 20, nullable = false, unique = true)
     val code: String,
 
     @Column(name = "name", length = 100, nullable = false)
@@ -19,6 +22,9 @@ data class Product(
 
     @Column(name = "interest_rate", precision = 5, scale = 4)
     val interestRate: BigDecimal? = null,
+
+    @Column(name = "max_account_per_customer", nullable = false)
+    val maxAccountPerCustomer: Int = 0,
 
     @Column(name = "created_at", nullable = false, updatable = false)
     val createdAt: LocalDateTime = LocalDateTime.now(),

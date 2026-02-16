@@ -16,7 +16,7 @@ data class Transaction(
     val transactionNumber: String,
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "account_number", referencedColumnName = "accountNumber", nullable = false)
+    @JoinColumn(name = "account_number", referencedColumnName = "account_number", nullable = false)
     val account: Account,
 
     @Enumerated(EnumType.STRING)
@@ -33,8 +33,5 @@ data class Transaction(
     val transactionAt: LocalDateTime = LocalDateTime.now(),
 
     @Column(name = "created_at", nullable = false, updatable = false)
-    val createdAt: LocalDateTime = LocalDateTime.now(),
-
-    @Column(name = "updated_at", nullable = false)
-    val updatedAt: LocalDateTime = LocalDateTime.now()
+    val createdAt: LocalDateTime = LocalDateTime.now()
 )

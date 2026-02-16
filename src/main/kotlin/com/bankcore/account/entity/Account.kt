@@ -12,6 +12,9 @@ data class Account(
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null,
 
+    @Column(name = "customer_id", nullable = false)
+    val customerId: Long,
+
     @Column(name = "account_number", length = 20, nullable = false, unique = true)
     val accountNumber: String,
 
@@ -26,7 +29,7 @@ data class Account(
     @Column(name = "status", nullable = false)
     val status: AccountStatus = AccountStatus.ACTIVE,
 
-    @Column(name = "opened_at", nullable = false, updatable = false)
+    @Column(name = "opened_at", updatable = false)
     val openedAt: LocalDateTime = LocalDateTime.now(),
 
     @Column(name = "closed_at")

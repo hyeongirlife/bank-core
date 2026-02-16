@@ -8,15 +8,12 @@ class ProductTest {
 
     @Test
     fun `should create Product with required fields`() {
-        val product = Product(
-            code = "SAV001",
-            name = "Basic Savings"
-        )
+        val product = Product(code = "SAV001", name = "Basic Savings")
 
         assertEquals("SAV001", product.code)
         assertEquals("Basic Savings", product.name)
-        assertNotNull(product.createdAt)
-        assertNotNull(product.updatedAt)
+        assertEquals(0, product.maxAccountPerCustomer)
+        assertNull(product.id)
     }
 
     @Test
@@ -25,27 +22,19 @@ class ProductTest {
             code = "SAV001",
             name = "Basic Savings",
             description = "Basic savings account",
-            interestRate = BigDecimal("0.0250")
+            interestRate = BigDecimal("0.0250"),
+            maxAccountPerCustomer = 1
         )
 
-        assertEquals("SAV001", product.code)
-        assertEquals("Basic Savings", product.name)
         assertEquals("Basic savings account", product.description)
         assertEquals(BigDecimal("0.0250"), product.interestRate)
+        assertEquals(1, product.maxAccountPerCustomer)
     }
 
     @Test
-    fun `should handle null optional fields`() {
-        val product = Product(
-            code = "SAV001",
-            name = "Basic Savings",
-            description = null,
-            interestRate = null
-        )
+    fun `should default maxAccountPerCustomer to 0 meaning unlimited`() {
+        val product = Product(code = "SAV001", name = "Basic Savings")
 
-        assertEquals("SAV001", product.code)
-        assertEquals("Basic Savings", product.name)
-        assertEquals(null, product.description)
-        assertEquals(null, product.interestRate)
+        assertEquals(0, product.maxAccountPerCustomer)
     }
 }
