@@ -10,7 +10,7 @@ class AccountTest {
     private val product = Product(code = "SAV001", name = "Basic Savings")
 
     @Test
-    fun `should create Account with required fields`() {
+    fun `필수 필드로 계좌를 생성한다`() {
         val account = Account(
             customerId = 1L,
             accountNumber = "110-123-456789",
@@ -26,7 +26,7 @@ class AccountTest {
     }
 
     @Test
-    fun `should create Account with custom balance`() {
+    fun `잔액을 지정하여 계좌를 생성한다`() {
         val account = Account(
             customerId = 1L,
             accountNumber = "110-123-456789",
@@ -38,7 +38,7 @@ class AccountTest {
     }
 
     @Test
-    fun `should create closed Account`() {
+    fun `해지 상태의 계좌를 생성한다`() {
         val account = Account(
             customerId = 1L,
             accountNumber = "110-123-456789",

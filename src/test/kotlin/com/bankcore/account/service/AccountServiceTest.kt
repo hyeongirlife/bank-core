@@ -28,7 +28,7 @@ class AccountServiceTest {
     private val product = Product(id = 1L, code = "SAV001", name = "Basic Savings")
 
     @Test
-    fun `should create account successfully`() {
+    fun `계좌를 정상적으로 개설한다`() {
         val request = AccountCreateRequest(customerId = 1L, productCode = "SAV001")
 
         whenever(productRepository.findByCode("SAV001")).thenReturn(product)
@@ -48,7 +48,7 @@ class AccountServiceTest {
     }
 
     @Test
-    fun `should throw exception when product not found`() {
+    fun `존재하지 않는 상품 코드로 개설 시 예외를 던진다`() {
         val request = AccountCreateRequest(customerId = 1L, productCode = "INVALID")
 
         whenever(productRepository.findByCode("INVALID")).thenReturn(null)
@@ -60,7 +60,7 @@ class AccountServiceTest {
     }
 
     @Test
-    fun `should throw exception when max account limit exceeded`() {
+    fun `최대 계좌 수 초과 시 예외를 던진다`() {
         val limitedProduct = Product(id = 1L, code = "SAV001", name = "Basic Savings", maxAccountPerCustomer = 1)
         val request = AccountCreateRequest(customerId = 1L, productCode = "SAV001")
 

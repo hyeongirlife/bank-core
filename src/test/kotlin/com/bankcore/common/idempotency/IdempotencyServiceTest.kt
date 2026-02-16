@@ -26,7 +26,7 @@ class IdempotencyServiceTest {
     }
 
     @Test
-    fun `should acquire lock when key does not exist`() {
+    fun `키가 존재하지 않으면 락을 획득한다`() {
         whenever(valueOperations.setIfAbsent(eq("idempotency:abc-123"), eq("PROCESSING"), any<Duration>()))
             .thenReturn(true)
 
@@ -36,7 +36,7 @@ class IdempotencyServiceTest {
     }
 
     @Test
-    fun `should fail to acquire lock when key already exists`() {
+    fun `키가 이미 존재하면 락 획득에 실패한다`() {
         whenever(valueOperations.setIfAbsent(eq("idempotency:abc-123"), eq("PROCESSING"), any<Duration>()))
             .thenReturn(false)
 
@@ -46,7 +46,7 @@ class IdempotencyServiceTest {
     }
 
     @Test
-    fun `should return saved response when exists`() {
+    fun `저장된 응답이 있으면 반환한다`() {
         whenever(valueOperations.get("idempotency:abc-123")).thenReturn("{\"id\":1}")
 
         val result = idempotencyService.getResponse("abc-123")
@@ -55,7 +55,7 @@ class IdempotencyServiceTest {
     }
 
     @Test
-    fun `should return null when no saved response`() {
+    fun `저장된 응답이 없으면 null을 반환한다`() {
         whenever(valueOperations.get("idempotency:abc-123")).thenReturn(null)
 
         val result = idempotencyService.getResponse("abc-123")
@@ -64,7 +64,7 @@ class IdempotencyServiceTest {
     }
 
     @Test
-    fun `should return PROCESSING as saved response during processing`() {
+    fun `처리 중일 때 PROCESSING을 반환한다`() {
         whenever(valueOperations.get("idempotency:abc-123")).thenReturn("PROCESSING")
 
         val result = idempotencyService.getResponse("abc-123")
@@ -73,7 +73,7 @@ class IdempotencyServiceTest {
     }
 
     @Test
-    fun `should save response with TTL`() {
+    fun `응답을 TTL과 함께 저장한다`() {
         idempotencyService.saveResponse("abc-123", "{\"id\":1}")
 
         verify(valueOperations).set(eq("idempotency:abc-123"), eq("{\"id\":1}"), any<Duration>())

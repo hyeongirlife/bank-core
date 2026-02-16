@@ -13,7 +13,7 @@ class AccountNumberGeneratorTest {
     private val generator = AccountNumberGenerator(accountRepository)
 
     @Test
-    fun `should generate account number in 110-XXX-XXXXXX format`() {
+    fun `110-XXX-XXXXXX 형식의 계좌번호를 생성한다`() {
         whenever(accountRepository.existsByAccountNumber(org.mockito.kotlin.any())).thenReturn(false)
         
         val accountNumber = generator.generate()
@@ -22,7 +22,7 @@ class AccountNumberGeneratorTest {
     }
 
     @Test
-    fun `should generate unique account numbers`() {
+    fun `고유한 계좌번호를 생성한다`() {
         whenever(accountRepository.existsByAccountNumber(org.mockito.kotlin.any())).thenReturn(false)
         
         val numbers = (1..100).map { generator.generate() }.toSet()
@@ -30,7 +30,7 @@ class AccountNumberGeneratorTest {
     }
 
     @Test
-    fun `should regenerate when account number already exists`() {
+    fun `계좌번호 중복 시 재생성한다`() {
         val existingNumber = "110-123-456789"
         val newNumber = "110-789-123456"
         
@@ -50,7 +50,7 @@ class AccountNumberGeneratorTest {
     }
 
     @Test
-    fun `should throw exception when max retry attempts exceeded`() {
+    fun `최대 재시도 횟수 초과 시 예외를 던진다`() {
         whenever(accountRepository.existsByAccountNumber(org.mockito.kotlin.any())).thenReturn(true)
         
         assertThrows<IllegalStateException> {

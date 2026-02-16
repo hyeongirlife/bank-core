@@ -28,7 +28,7 @@ class IdempotencyInterceptorTest {
     }
 
     @Test
-    fun `should pass through when no idempotency key header`() {
+    fun `멱등성 키 헤더가 없으면 통과한다`() {
         request.method = "POST"
 
         val result = interceptor.preHandle(request, response, Any())
@@ -37,7 +37,7 @@ class IdempotencyInterceptorTest {
     }
 
     @Test
-    fun `should pass through for GET requests`() {
+    fun `GET 요청은 멱등성 체크를 건너뛴다`() {
         request.method = "GET"
         request.addHeader("Idempotency-Key", "abc-123")
 
@@ -47,7 +47,7 @@ class IdempotencyInterceptorTest {
     }
 
     @Test
-    fun `should acquire lock and proceed when key is new`() {
+    fun `새로운 키로 요청 시 락을 획득하고 진행한다`() {
         request.method = "POST"
         request.addHeader("Idempotency-Key", "abc-123")
 
@@ -59,7 +59,7 @@ class IdempotencyInterceptorTest {
     }
 
     @Test
-    fun `should return cached response when key already processed`() {
+    fun `이미 처리된 키로 요청 시 캐시된 응답을 반환한다`() {
         request.method = "POST"
         request.addHeader("Idempotency-Key", "abc-123")
 
@@ -76,7 +76,7 @@ class IdempotencyInterceptorTest {
     }
 
     @Test
-    fun `should return 409 when key is still processing`() {
+    fun `처리 중인 키로 요청 시 409를 반환한다`() {
         request.method = "POST"
         request.addHeader("Idempotency-Key", "abc-123")
 

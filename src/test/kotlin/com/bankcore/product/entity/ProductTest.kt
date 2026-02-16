@@ -7,7 +7,7 @@ import java.math.BigDecimal
 class ProductTest {
 
     @Test
-    fun `should create Product with required fields`() {
+    fun `필수 필드로 상품을 생성한다`() {
         val product = Product(code = "SAV001", name = "Basic Savings")
 
         assertEquals("SAV001", product.code)
@@ -17,7 +17,7 @@ class ProductTest {
     }
 
     @Test
-    fun `should create Product with all fields`() {
+    fun `전체 필드로 상품을 생성한다`() {
         val product = Product(
             code = "SAV001",
             name = "Basic Savings",
@@ -32,7 +32,7 @@ class ProductTest {
     }
 
     @Test
-    fun `should default maxAccountPerCustomer to 0 meaning unlimited`() {
+    fun `maxAccountPerCustomer 기본값은 0으로 무제한이다`() {
         val product = Product(code = "SAV001", name = "Basic Savings")
 
         assertEquals(0, product.maxAccountPerCustomer)

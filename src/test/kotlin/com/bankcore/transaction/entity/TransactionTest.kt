@@ -12,7 +12,7 @@ class TransactionTest {
     private val account = Account(customerId = 1L, accountNumber = "110-123-456789", product = product)
 
     @Test
-    fun `should create deposit Transaction`() {
+    fun `입금 거래를 생성한다`() {
         val tx = Transaction(
             transactionNumber = "TXN202401010001",
             account = account,
@@ -29,7 +29,7 @@ class TransactionTest {
     }
 
     @Test
-    fun `should create withdrawal Transaction`() {
+    fun `출금 거래를 생성한다`() {
         val tx = Transaction(
             transactionNumber = "TXN202401010002",
             account = account,
@@ -42,7 +42,7 @@ class TransactionTest {
     }
 
     @Test
-    fun `should create transfer transactions`() {
+    fun `이체 거래를 생성한다`() {
         val txOut = Transaction(
             transactionNumber = "TXN202401010003",
             account = account,

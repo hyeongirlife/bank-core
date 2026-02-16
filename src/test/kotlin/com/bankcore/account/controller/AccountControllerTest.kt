@@ -27,7 +27,7 @@ class AccountControllerTest {
     @MockitoBean lateinit var idempotencyService: IdempotencyService
 
     @Test
-    fun `POST api accounts should create account and return 201`() {
+    fun `계좌 개설 요청 시 201을 반환한다`() {
         val request = AccountCreateRequest(customerId = 1L, productCode = "SAV001")
         val response = AccountResponse(
             id = 1L,
@@ -56,7 +56,7 @@ class AccountControllerTest {
     }
 
     @Test
-    fun `POST api accounts should return 400 when product not found`() {
+    fun `존재하지 않는 상품 코드로 요청 시 400을 반환한다`() {
         val request = AccountCreateRequest(customerId = 1L, productCode = "INVALID")
 
         whenever(accountService.createAccount(any()))
@@ -71,7 +71,7 @@ class AccountControllerTest {
     }
 
     @Test
-    fun `POST api accounts should return 400 when productCode is blank`() {
+    fun `빈 상품 코드로 요청 시 400을 반환한다`() {
         val request = AccountCreateRequest(customerId = 1L, productCode = "")
 
         mockMvc.post("/api/accounts") {
@@ -83,7 +83,7 @@ class AccountControllerTest {
     }
 
     @Test
-    fun `POST api accounts should return 400 when customerId is negative`() {
+    fun `음수 고객 ID로 요청 시 400을 반환한다`() {
         val request = AccountCreateRequest(customerId = -1L, productCode = "SAV001")
 
         mockMvc.post("/api/accounts") {
