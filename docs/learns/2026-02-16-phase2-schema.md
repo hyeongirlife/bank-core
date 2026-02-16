@@ -102,3 +102,32 @@ Client → Filter → DispatcherServlet → Interceptor.preHandle → Controller
 - Filter: Servlet 레벨, Spring 컨텍스트 밖, 모든 요청에 적용
 - Interceptor: Spring MVC 레벨, 빈 주입 가능, Handler 정보 접근 가능
 - 멱등성처럼 비즈니스 로직과 가까운 관심사는 Interceptor가 적합
+
+### 분산 락을 활용한 동시성 제어
+
+**문제 상황**
+- 같은 고객이 같은 상품으로 동시에 계좌 개설 요청 → 둘 다 count=0으로 읽고 둘 다 통과 → 계좌 2개 생성
+- DB count 체크만으로는 race condition 방지 불가
+
+**해결: 4단계 방어 체계**
+```
+1차: 멱등성 키 (Redis, TTL 24h) — 같은 요청 재시도 차단
+2차: 분산 락 (Redis SETNX, TTL 5s) — customer:product 단위 동시성 직렬화
+3차: DB count 체크 — maxAccountPerCustomer 비즈니스 룰 검증
+4차: DB UNIQUE 제약 — 최후 안전망 (1인 1계좌 상품 한정)
+```
+
+**비관적 락 vs 분산 락 — 실무 판단 기준**
+- 비관적 락 (`SELECT FOR UPDATE`): Product row 단위 잠금 → 같은 상품 개설하는 모든 고객이 직렬화 → 트래픽 높으면 병목
+- 분산 락 (Redis): customer+product 조합 단위 잠금 → 다른 고객끼리는 병렬 처리 가능
+- 고객 대면 서비스(토스뱅크 등)에서는 분산 락이 표준. 내부 관리자용 저트래픽 시스템은 비관적 락으로 충분
+
+**분산 락 TTL을 5초로 잡은 이유**
+- 계좌 개설 트랜잭션은 보통 수백ms 내 완료
+- 프로세스가 죽어도 5초면 자동 해제 → 다른 요청 진행 가능
+- 너무 길면 장애 시 고객 대기, 너무 짧으면 트랜잭션 완료 전 락 해제 위험
+
+**면접 포인트**
+- "Redis 장애 시?" → 분산 락만 의존하면 중복 생성 위험 → DB UNIQUE 제약이 최후 방어선
+- "Redisson 안 쓰고 직접 구현?" → 단순 SETNX+TTL이면 충분. Redisson은 재진입 락, 페어 락 등 고급 기능 필요 시 도입
+- "락 안에서 @Transactional?" → 락 범위가 트랜잭션보다 넓어야 함. 트랜잭션 커밋 후 락 해제가 원칙
