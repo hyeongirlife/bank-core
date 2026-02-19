@@ -7,8 +7,8 @@ import com.bankcore.account.repository.AccountRepository
 import com.bankcore.common.lock.DistributedLockService
 import com.bankcore.product.entity.Product
 import com.bankcore.product.repository.ProductRepository
-import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.InjectMocks
@@ -16,6 +16,7 @@ import org.mockito.Mock
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.kotlin.*
 import java.math.BigDecimal
+import java.util.Optional
 
 @ExtendWith(MockitoExtension::class)
 class AccountServiceTest {
@@ -93,5 +94,33 @@ class AccountServiceTest {
             accountService.createAccount(request)
         }
         assertEquals("현재 처리 중인 요청이 있습니다. 잠시 후 다시 시도해주세요.", ex.message)
+    }
+
+    @Test
+    fun `ID로 계좌를 조회한다`() {
+        val account = Account(
+            id = 1L,
+            customerId = 1L,
+            accountNumber = "110-123-456789",
+            product = product
+        )
+        whenever(accountRepository.findById(1L)).thenReturn(Optional.of(account))
+
+        val response = accountService.getAccount(1L)
+
+        assertEquals(1L, response.id)
+        assertEquals("110-123-456789", response.accountNumber)
+        assertEquals("SAV001", response.productCode)
+    }
+
+    @Test
+    fun `존재하지 않는 ID로 조회 시 예외를 던진다`() {
+        whenever(accountRepository.findById(999L)).thenReturn(Optional.empty())
+
+        val ex = assertThrows<NoSuchElementException> {
+            accountService.getAccount(999L)
+        }
+
+        assertEquals("계좌를 찾을 수 없습니다: 999", ex.message)
     }
 }

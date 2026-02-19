@@ -41,4 +41,12 @@ class AccountService(
             AccountResponse.from(accountRepository.save(account))
         }
     }
+
+    @Transactional(readOnly = true)
+    fun getAccount(id: Long): AccountResponse {
+        val account = accountRepository.findById(id)
+            .orElseThrow { NoSuchElementException("계좌를 찾을 수 없습니다: $id") }
+
+        return AccountResponse.from(account)
+    }
 }

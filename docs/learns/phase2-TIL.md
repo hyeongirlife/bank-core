@@ -131,3 +131,26 @@ Client → Filter → DispatcherServlet → Interceptor.preHandle → Controller
 - "Redis 장애 시?" → 분산 락만 의존하면 중복 생성 위험 → DB UNIQUE 제약이 최후 방어선
 - "Redisson 안 쓰고 직접 구현?" → 단순 SETNX+TTL이면 충분. Redisson은 재진입 락, 페어 락 등 고급 기능 필요 시 도입
 - "락 안에서 @Transactional?" → 락 범위가 트랜잭션보다 넓어야 함. 트랜잭션 커밋 후 락 해제가 원칙
+
+### 추가 학습: 분산 락 해제 안정성 보완 (2026-02-19)
+
+**기존 구현의 위험 포인트**
+- 락 값이 고정 문자열(`LOCKED`)이고 `finally`에서 `delete(lockKey)`를 호출하면,
+  TTL 만료 후 다른 요청이 같은 락 키를 선점한 상황에서 이전 요청이 새 락을 삭제할 수 있음
+
+**개선 방식**
+- 락 획득 시 UUID 토큰을 값으로 저장
+- 락 해제 시 Lua 스크립트로 `get(key) == token`일 때만 `del(key)` 수행
+- 핵심은 "락 획득"보다 "소유자만 해제"를 보장하는 것
+
+**Spring Data Redis 구현 포인트**
+- `DefaultRedisScript` 사용 시 `scriptText` 프로퍼티가 아니라 `setScriptText(...)` 사용
+- 결과 타입도 `setResultType(Long::class.java)`로 지정
+
+**예외 처리에서 배운 점**
+- `finally`에서 unlock 실패가 발생하면 원래 비즈니스 예외를 덮어쓸 수 있음
+- action 예외를 우선 보존하고, unlock 예외는 `addSuppressed`로 붙이는 구조가 안전함
+
+**테스트에서 배운 점**
+- `setIfAbsent`에 넣은 락 토큰과 `execute(unlockScript, ...)`에 전달한 토큰이 같은지 검증해야 회귀 방지 가능
+- 락 로직 테스트는 "호출 여부"보다 "동일 토큰 사용" 같은 안전 속성을 검증하는 것이 중요함

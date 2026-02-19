@@ -14,6 +14,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 import java.math.BigDecimal
 import java.time.LocalDateTime
@@ -92,5 +93,41 @@ class AccountControllerTest {
         }.andExpect {
             status { isBadRequest() }
         }
+    }
+
+    @Test
+    fun `계좌 ID로 조회 시 200을 반환한다`() {
+        val response = AccountResponse(
+            id = 1L,
+            customerId = 1L,
+            accountNumber = "110-123-456789",
+            productCode = "SAV001",
+            productName = "Basic Savings",
+            balance = BigDecimal("0.00"),
+            status = AccountStatus.ACTIVE,
+            openedAt = LocalDateTime.now(),
+            closedAt = null
+        )
+
+        whenever(accountService.getAccount(1L)).thenReturn(response)
+
+        mockMvc.get("/api/accounts/1")
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.id") { value(1) }
+                jsonPath("$.accountNumber") { value("110-123-456789") }
+                jsonPath("$.status") { value("ACTIVE") }
+            }
+    }
+
+    @Test
+    fun `존재하지 않는 계좌 ID 조회 시 404를 반환한다`() {
+        whenever(accountService.getAccount(999L))
+            .thenThrow(NoSuchElementException("계좌를 찾을 수 없습니다: 999"))
+
+        mockMvc.get("/api/accounts/999")
+            .andExpect {
+                status { isNotFound() }
+            }
     }
 }

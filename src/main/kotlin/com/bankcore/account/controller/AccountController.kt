@@ -19,6 +19,12 @@ class AccountController(
         return ResponseEntity.status(HttpStatus.CREATED).body(response)
     }
 
+    @GetMapping("/{id}")
+    fun getAccount(@PathVariable id: Long): ResponseEntity<AccountResponse> {
+        val response = accountService.getAccount(id)
+        return ResponseEntity.ok(response)
+    }
+
     @ExceptionHandler(IllegalArgumentException::class)
     fun handleIllegalArgument(e: IllegalArgumentException): ResponseEntity<Map<String, String>> {
         return ResponseEntity.badRequest().body(mapOf("error" to (e.message ?: "Bad Request")))
@@ -27,5 +33,10 @@ class AccountController(
     @ExceptionHandler(IllegalStateException::class)
     fun handleIllegalState(e: IllegalStateException): ResponseEntity<Map<String, String>> {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(mapOf("error" to (e.message ?: "Conflict")))
+    }
+
+    @ExceptionHandler(NoSuchElementException::class)
+    fun handleNotFound(e: NoSuchElementException): ResponseEntity<Map<String, String>> {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(mapOf("error" to (e.message ?: "Not Found")))
     }
 }
