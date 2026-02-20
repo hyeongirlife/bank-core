@@ -29,6 +29,10 @@ data class Account(
     @Column(name = "status", nullable = false)
     val status: AccountStatus = AccountStatus.ACTIVE,
 
+    @Version
+    @Column(name = "version", nullable = false)
+    val version: Long = 0,
+
     @Column(name = "opened_at", updatable = false)
     val openedAt: LocalDateTime = LocalDateTime.now(),
 

@@ -155,3 +155,101 @@ Client → Filter → DispatcherServlet → Interceptor.preHandle → Controller
 **테스트에서 배운 점**
 - `setIfAbsent`에 넣은 락 토큰과 `execute(unlockScript, ...)`에 전달한 토큰이 같은지 검증해야 회귀 방지 가능
 - 락 로직 테스트는 "호출 여부"보다 "동일 토큰 사용" 같은 안전 속성을 검증하는 것이 중요함
+
+### 추가 학습: 계좌 해지 API 구현 및 검증 (2026-02-20)
+
+**요구사항 확정 정책 반영**
+- 잔액 0원인 계좌만 해지 허용
+- 이미 해지된 계좌 재요청은 `409 Conflict`
+- 분산 락 키는 계좌 단위 공통키 `lock:account:{id}` 사용
+
+**서비스 레이어에서 상태 전이 규칙을 명시**
+- `closeAccount(id)`에서 분산 락 획득 후 조회/검증/저장을 한 트랜잭션 안에서 처리
+- 검증 순서:
+  1) 미존재 → `NoSuchElementException` (404)
+  2) 이미 CLOSED → `IllegalStateException` (409)
+  3) 잔액 non-zero → `IllegalStateException` (409)
+- 상태 전이는 immutable 방식(`copy`)으로 반영: `ACTIVE -> CLOSED`, `closedAt/updatedAt` 갱신
+
+**BigDecimal 비교에서 배운 점**
+- `BigDecimal("0.00") != BigDecimal.ZERO`는 scale 차이로 false가 될 수 있음
+- 금액 비교는 `compareTo(BigDecimal.ZERO) != 0`처럼 값 비교로 처리해야 안전함
+
+**API/예외 응답 계약 유지**
+- 엔드포인트: `POST /api/accounts/{id}/close`
+- 성공 시 `200 OK + AccountResponse`
+- 실패는 기존 Controller `@ExceptionHandler` 매핑을 재사용(400/409/404)
+
+**멱등성과 해지 API의 결합 동작**
+- `/api/**`의 POST는 기존 Idempotency 인터셉터가 자동 적용
+- 같은 `Idempotency-Key` 재시도는 기존 성공 응답(200)을 재사용
+- 다른 키로 같은 계좌 재해지는 비즈니스 검증에 의해 409
+
+**테스트 전략 (RED → GREEN)**
+- Service 테스트:
+  - 정상 해지
+  - 미존재 계좌
+  - 이미 해지 계좌
+  - 잔액 존재 계좌
+  - 락 키가 `account:{id}`인지 검증
+- Controller 테스트:
+  - 200 / 404 / 409 / 409 매핑 검증
+- `./gradlew test` 전체 통과로 회귀 확인
+
+**수동 검증 자산 정리**
+- Apidog import용 컬렉션 파일 작성:
+  - `docs/apidog/account-close-phase2.collection.json`
+- 시나리오 5종(정상/재해지-다른키/재시도-같은키/미존재/잔액존재) 포함
+
+**운영 관점 메모**
+- Docker 검증은 로컬 Docker daemon 실행 상태에 의존
+- daemon 미기동 시 `Cannot connect to the Docker daemon` 에러로 컨테이너/실 API 검증이 차단됨
+- 이 경우 Docker Desktop 기동 후 `docker compose up -d`부터 재실행 필요
+
+### 수동 E2E 검증 로그 (Docker + Local BootRun)
+
+**실행 환경**
+- Docker Compose: MySQL(3306), Redis(6379)
+- 애플리케이션: `./gradlew bootRun` (local profile)
+- 헬스체크: `/actuator/health` = `UP`
+
+**사전 데이터**
+- Product: `SAV001`
+- Account #1: 잔액 0, ACTIVE
+- Account #2: 잔액 100, ACTIVE
+
+**시나리오 결과**
+1) 정상 해지 (`POST /api/accounts/1/close`, key=`close-1-k1`)
+   - 결과: `200`, `status=CLOSED`, `closedAt!=null`
+2) 동일 계좌 재해지(다른 키, key=`close-1-k3`)
+   - 결과: `409`, `{"error":"이미 해지된 계좌입니다"}`
+3) 동일 멱등 키 재시도(같은 키, key=`close-1-k1`)
+   - 결과: `200`, 최초 성공 응답 재사용
+4) 미존재 계좌 해지 (`/api/accounts/99999999/close`)
+   - 결과: `404`, `{"error":"계좌를 찾을 수 없습니다: 99999999"}`
+5) 잔액 있는 계좌 해지 (`/api/accounts/2/close`)
+   - 결과: `409`, `{"error":"잔액이 남아있는 계좌는 해지할 수 없습니다"}`
+
+**DB 최종 상태 확인**
+- Account #1: `CLOSED`, `closed_at` 설정됨
+- Account #2: `ACTIVE` 유지, `closed_at` = `NULL`
+
+### 추가 학습: 면접 답변용 — 왜 `transfer` API를 별도로 두는가
+
+**한 줄 답변**
+- 송금은 기술적으로 `출금+입금`이지만, 도메인적으로는 **단일 트랜잭션**이라 `/api/transfers`로 묶어야 정합성을 보장할 수 있다.
+
+**면접 포인트 (핵심 5가지)**
+1. **원자성(All-or-Nothing)**
+   - 출금/입금을 각각 API로 분리하면 중간 실패 시 partial success 위험이 커진다.
+2. **검증 일원화**
+   - 동일계좌 금지, 미존재/해지/잔액 부족 규칙을 한 유스케이스에서 강제할 수 있다.
+3. **동시성 제어**
+   - 단일 계좌 락이 아니라 `account-transfer:{min}:{max}` pair lock으로 두 계좌 동시 갱신을 안전하게 처리한다.
+4. **감사/원장 요건**
+   - 송금 1건당 `TRANSFER_OUT` + `TRANSFER_IN` 2건을 남겨 추적 가능성을 확보한다.
+5. **재시도 안정성**
+   - 클라이언트는 transfer 1요청만 재시도하면 되어 멱등성 관리가 단순해진다.
+
+**요약 멘트**
+- “송금은 내부적으로 출금+입금 단계를 가지지만, 외부 계약은 `transfer`라는 하나의 비즈니스 트랜잭션으로 제공해야 금융 도메인 정합성과 운영 안정성을 동시에 만족합니다.”

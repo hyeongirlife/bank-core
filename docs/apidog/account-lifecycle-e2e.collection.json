@@ -1,0 +1,264 @@
+{
+  "info": {
+    "_postman_id": "0e7f0863-5571-4b5c-8c6d-3dcf90bf2ad9",
+    "name": "bank-core Account Lifecycle E2E (Apidog Import)",
+    "description": "시나리오: 계좌 개설 -> 계좌 입금(1,000,000,000원) -> 계좌 인출(495,000,000원) -> 계좌 해지 시도(409) -> 잔액 0으로 만든 후 재시도(200).\n\nApidog에서 Postman Collection(v2.1)으로 Import 가능.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1) 계좌 개설 (201)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{idempotencyKeyCreate}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customerId\": {{customerId}},\n  \"productCode\": \"SAV001\"\n}"
+        },
+        "url": "{{baseUrl}}/api/accounts"
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const runId = Date.now().toString();",
+              "pm.collectionVariables.set('customerId', runId);",
+              "pm.collectionVariables.set('idempotencyKeyCreate', `e2e-create-${runId}`);",
+              "pm.collectionVariables.set('idempotencyKeyDeposit', `e2e-deposit-${runId}`);",
+              "pm.collectionVariables.set('idempotencyKeyWithdraw1', `e2e-withdraw1-${runId}`);",
+              "pm.collectionVariables.set('idempotencyKeyCloseFail', `e2e-close-fail-${runId}`);",
+              "pm.collectionVariables.set('idempotencyKeyWithdraw2', `e2e-withdraw2-${runId}`);",
+              "pm.collectionVariables.set('idempotencyKeyCloseSuccess', `e2e-close-success-${runId}`);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+              "const body = pm.response.json();",
+              "pm.collectionVariables.set('accountId', body.id);",
+              "pm.test('created account id exists', function () { pm.expect(body.id).to.be.a('number'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2) 계좌 입금 1,000,000,000원 (200)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{idempotencyKeyDeposit}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": 1000000000.00\n}"
+        },
+        "url": "{{baseUrl}}/api/accounts/{{accountId}}/deposit"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test('balance is 1,000,000,000', function () { pm.expect(Number(body.balance)).to.eql(1000000000); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3) 계좌 인출 495,000,000원 (200)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{idempotencyKeyWithdraw1}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": 495000000.00\n}"
+        },
+        "url": "{{baseUrl}}/api/accounts/{{accountId}}/withdraw"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test('balance is 505,000,000', function () { pm.expect(Number(body.balance)).to.eql(505000000); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4) 계좌 해지 시도 (잔액 존재, 409)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Idempotency-Key",
+            "value": "{{idempotencyKeyCloseFail}}",
+            "type": "text"
+          }
+        ],
+        "url": "{{baseUrl}}/api/accounts/{{accountId}}/close"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 409', function () { pm.response.to.have.status(409); });",
+              "const body = pm.response.json();",
+              "pm.test('error exists', function () { pm.expect(body.error).to.be.a('string'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5) 잔액 전액 인출 505,000,000원 (200)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{idempotencyKeyWithdraw2}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": 505000000.00\n}"
+        },
+        "url": "{{baseUrl}}/api/accounts/{{accountId}}/withdraw"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test('balance is 0', function () { pm.expect(Number(body.balance)).to.eql(0); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "6) 계좌 해지 재시도 (성공, 200)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Idempotency-Key",
+            "value": "{{idempotencyKeyCloseSuccess}}",
+            "type": "text"
+          }
+        ],
+        "url": "{{baseUrl}}/api/accounts/{{accountId}}/close"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test('account status is CLOSED', function () { pm.expect(body.status).to.eql('CLOSED'); });",
+              "pm.test('closedAt exists', function () { pm.expect(body.closedAt).to.not.be.null; });"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "customerId",
+      "value": "10001"
+    },
+    {
+      "key": "accountId",
+      "value": "1"
+    },
+    {
+      "key": "idempotencyKeyCreate",
+      "value": "e2e-create-account-1"
+    },
+    {
+      "key": "idempotencyKeyDeposit",
+      "value": "e2e-deposit-account-1"
+    },
+    {
+      "key": "idempotencyKeyWithdraw1",
+      "value": "e2e-withdraw1-account-1"
+    },
+    {
+      "key": "idempotencyKeyCloseFail",
+      "value": "e2e-close-fail-account-1"
+    },
+    {
+      "key": "idempotencyKeyWithdraw2",
+      "value": "e2e-withdraw2-account-1"
+    },
+    {
+      "key": "idempotencyKeyCloseSuccess",
+      "value": "e2e-close-success-account-1"
+    }
+  ]
+}
