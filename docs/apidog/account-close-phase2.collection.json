@@ -1,0 +1,180 @@
+{
+  "info": {
+    "_postman_id": "b7bc0ad4-59ba-48be-befc-57f3d57c26e4",
+    "name": "bank-core Phase2 Account Lifecycle (Apidog Import)",
+    "description": "계좌 개설/입금/출금/해지 API 수동 검증 컬렉션. Apidog에서 Postman Collection(v2.1)으로 Import 가능.\n\n사전 준비 변수:\n- baseUrl (예: http://localhost:8080)\n- accountId (테스트 계좌 ID)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1) 정상 해지 (200)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Idempotency-Key",
+            "value": "{{idempotencyKeySuccess}}",
+            "type": "text"
+          }
+        ],
+        "url": "{{baseUrl}}/api/accounts/{{zeroBalanceAccountId}}/close"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test('account status is CLOSED', function () { pm.expect(body.status).to.eql('CLOSED'); });",
+              "pm.test('closedAt exists', function () { pm.expect(body.closedAt).to.not.be.null; });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2) 동일 계좌 재해지 (다른 키, 409)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Idempotency-Key",
+            "value": "{{idempotencyKeyRetryConflict}}",
+            "type": "text"
+          }
+        ],
+        "url": "{{baseUrl}}/api/accounts/{{zeroBalanceAccountId}}/close"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 409', function () { pm.response.to.have.status(409); });",
+              "const body = pm.response.json();",
+              "pm.test('error exists', function () { pm.expect(body.error).to.be.a('string'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3) 동일 멱등 키 재시도 (200, 캐시 응답)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Idempotency-Key",
+            "value": "{{idempotencyKeySuccess}}",
+            "type": "text"
+          }
+        ],
+        "url": "{{baseUrl}}/api/accounts/{{zeroBalanceAccountId}}/close"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test('account status is CLOSED', function () { pm.expect(body.status).to.eql('CLOSED'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4) 미존재 계좌 해지 (404)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Idempotency-Key",
+            "value": "{{idempotencyKeyMissing}}",
+            "type": "text"
+          }
+        ],
+        "url": "{{baseUrl}}/api/accounts/{{missingAccountId}}/close"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 404', function () { pm.response.to.have.status(404); });",
+              "const body = pm.response.json();",
+              "pm.test('error exists', function () { pm.expect(body.error).to.be.a('string'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5) 잔액 있는 계좌 해지 (409)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Idempotency-Key",
+            "value": "{{idempotencyKeyNonZero}}",
+            "type": "text"
+          }
+        ],
+        "url": "{{baseUrl}}/api/accounts/{{nonZeroBalanceAccountId}}/close"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 409', function () { pm.response.to.have.status(409); });",
+              "const body = pm.response.json();",
+              "pm.test('error exists', function () { pm.expect(body.error).to.be.a('string'); });"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "zeroBalanceAccountId",
+      "value": "1"
+    },
+    {
+      "key": "nonZeroBalanceAccountId",
+      "value": "2"
+    },
+    {
+      "key": "missingAccountId",
+      "value": "99999999"
+    },
+    {
+      "key": "idempotencyKeySuccess",
+      "value": "close-{{zeroBalanceAccountId}}-k1"
+    },
+    {
+      "key": "idempotencyKeyRetryConflict",
+      "value": "close-{{zeroBalanceAccountId}}-k2"
+    },
+    {
+      "key": "idempotencyKeyMissing",
+      "value": "close-missing-k1"
+    },
+    {
+      "key": "idempotencyKeyNonZero",
+      "value": "close-nonzero-k1"
+    }
+  ]
+}
