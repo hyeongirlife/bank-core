@@ -22,14 +22,15 @@ class IdempotencyInterceptor(
     override fun preHandle(request: HttpServletRequest, response: HttpServletResponse, handler: Any): Boolean {
         if (request.method == "GET") return true
 
-        val key = request.getHeader(HEADER_NAME) ?: return true
+        val clientKey = request.getHeader(HEADER_NAME) ?: return true
+        val scopedKey = "${request.method}:${request.requestURI}:$clientKey"
 
-        if (idempotencyService.tryAcquire(key)) {
-            request.setAttribute(ATTRIBUTE_KEY, key)
+        if (idempotencyService.tryAcquire(scopedKey)) {
+            request.setAttribute(ATTRIBUTE_KEY, scopedKey)
             return true
         }
 
-        val savedResponse = idempotencyService.getResponse(key)
+        val savedResponse = idempotencyService.getResponse(scopedKey)
         if (savedResponse == null || savedResponse == "PROCESSING") {
             response.status = 409
             response.contentType = MediaType.APPLICATION_JSON_VALUE
@@ -57,6 +58,9 @@ class IdempotencyInterceptor(
             if (body != null) {
                 idempotencyService.saveResponse(key, body)
             }
+            return
         }
+
+        idempotencyService.clear(key)
     }
 }

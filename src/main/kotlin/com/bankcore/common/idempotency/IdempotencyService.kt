@@ -25,4 +25,8 @@ class IdempotencyService(
     fun saveResponse(key: String, response: String) {
         redisTemplate.opsForValue().set("$KEY_PREFIX$key", response, TTL)
     }
+
+    fun clear(key: String) {
+        redisTemplate.delete("$KEY_PREFIX$key")
+    }
 }
