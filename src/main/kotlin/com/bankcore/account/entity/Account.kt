@@ -3,6 +3,7 @@ package com.bankcore.account.entity
 import com.bankcore.product.entity.Product
 import jakarta.persistence.*
 import java.math.BigDecimal
+import java.time.LocalDate
 import java.time.LocalDateTime
 
 @Entity
@@ -38,6 +39,9 @@ data class Account(
 
     @Column(name = "closed_at")
     val closedAt: LocalDateTime? = null,
+
+    @Column(name = "maturity_date")
+    val maturityDate: LocalDate? = null,
 
     @Column(name = "created_at", nullable = false, updatable = false)
     val createdAt: LocalDateTime = LocalDateTime.now(),

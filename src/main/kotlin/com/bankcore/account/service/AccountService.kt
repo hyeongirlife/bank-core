@@ -7,6 +7,7 @@ import com.bankcore.account.entity.Account
 import com.bankcore.account.entity.AccountStatus
 import com.bankcore.account.repository.AccountRepository
 import com.bankcore.common.lock.DistributedLockService
+import com.bankcore.interest.service.EarlyTerminationSettlementService
 import com.bankcore.product.repository.ProductRepository
 import com.bankcore.transaction.entity.Transaction
 import com.bankcore.transaction.entity.TransactionType
@@ -15,7 +16,9 @@ import com.bankcore.transaction.service.TransactionNumberGenerator
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
+import java.time.Clock
 import java.time.LocalDateTime
+import java.time.ZoneId
 
 @Service
 class AccountService(
@@ -24,7 +27,9 @@ class AccountService(
     private val accountNumberGenerator: AccountNumberGenerator,
     private val distributedLockService: DistributedLockService,
     private val transactionRepository: TransactionRepository,
-    private val transactionNumberGenerator: TransactionNumberGenerator
+    private val transactionNumberGenerator: TransactionNumberGenerator,
+    private val earlyTerminationSettlementService: EarlyTerminationSettlementService,
+    private val clock: Clock = Clock.system(ZoneId.of("Asia/Seoul"))
 ) {
     @Transactional
     fun createAccount(request: AccountCreateRequest): AccountResponse {
@@ -44,7 +49,8 @@ class AccountService(
             val account = Account(
                 customerId = request.customerId,
                 accountNumber = accountNumberGenerator.generate(),
-                product = product
+                product = product,
+                maturityDate = request.maturityDate
             )
 
             AccountResponse.from(accountRepository.save(account))
@@ -73,7 +79,11 @@ class AccountService(
                 throw IllegalStateException("잔액이 남아있는 계좌는 해지할 수 없습니다")
             }
 
-            val now = LocalDateTime.now()
+            val now = LocalDateTime.now(clock)
+            val closeBusinessDate = now.toLocalDate()
+            if (account.maturityDate != null && closeBusinessDate.isBefore(account.maturityDate)) {
+                earlyTerminationSettlementService.settleOnClose(account, closeBusinessDate)
+            }
             val closedAccount = account.copy(
                 status = AccountStatus.CLOSED,
                 closedAt = now,
@@ -94,7 +104,7 @@ class AccountService(
                 throw IllegalStateException("해지된 계좌에는 입금할 수 없습니다")
             }
 
-            val now = LocalDateTime.now()
+            val now = LocalDateTime.now(clock)
             val updatedAccount = accountRepository.save(
                 account.copy(
                     balance = account.balance + request.amount,
@@ -131,7 +141,7 @@ class AccountService(
                 throw IllegalStateException("잔액이 부족합니다")
             }
 
-            val now = LocalDateTime.now()
+            val now = LocalDateTime.now(clock)
             val updatedAccount = accountRepository.save(
                 account.copy(
                     balance = account.balance - request.amount,
