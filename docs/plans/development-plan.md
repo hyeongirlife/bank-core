@@ -56,21 +56,27 @@
   - 계좌/송금/원장 관련 테스트 전부 통과
   - 코드 탐색 시 계층 책임(api/application/domain/infra)이 일관되게 보임
 
-### Phase 3: 금리 + 이자 도메인 (3-5일)
-- DB 스키마: base_rate, spread_rate, preferential_rate, interest_log 테이블
-- 금리 산출 API: 기준금리 + 가산금리 + 우대금리 조합
-- BigDecimal 기반 이자 계산 (단리/복리, 원단위 절사)
-- 일별 이자 계산 배치 (@Scheduled)
-- 멱등성 키 기반 재처리 안전성
-- 중도해지 이자 계산
+### Phase 3: 금리 + 이자 도메인 (3-5일) 진행 중
+- ✅ DB 스키마: base_rate, spread_rate, preferential_rate, interest_log 테이블
+- ✅ 금리 산출 API: 기준금리 + 가산금리 + 우대금리 조합
+- ⏳ BigDecimal 기반 이자 계산 (단리/복리, 원단위 절사)
+- ✅ 일별 이자 계산 배치 (@Scheduled)
+- ✅ 멱등성 키 기반 재처리 안전성
+- ✅ 중도해지 이자 계산
 
-### Phase 4: 트랜잭션 정합성 (3-4일)
-- 동시 송금 시 잔액 불일치 재현 테스트
-- 비관적 락 (SELECT ... FOR UPDATE)
-- 낙관적 락 (@Version)
-- 분산 락 (Redis, Redisson)
-- 전략별 TPS 벤치마크
-- TestContainer 기반 동시성 테스트
+### Phase 4: 트랜잭션 정합성 (3-4일) 진행 중
+#### Phase 4-1 (진행 중)
+- ✅ 동시 송금 정합성 재현 테스트
+- ✅ 비관적 락 (SELECT ... FOR UPDATE) 전략 도입
+- ✅ Testcontainers 기반 동시성 통합 테스트
+
+#### Phase 4-2 (예정)
+- ⏳ 낙관적 락 충돌 처리 정책(재시도/백오프) 도입
+- ⏳ 충돌 시나리오 테스트 확장
+
+#### Phase 4-3 (예정)
+- ⏳ 분산락/비관적락/낙관락 전략별 TPS 벤치마크
+- ⏳ README 벤치마크 결과 반영
 
 ### Phase 5: 인프라 + 배포 (2-3일)
 - Dockerfile (멀티스테이지 빌드)

@@ -16,6 +16,8 @@ import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
+import org.springframework.dao.CannotAcquireLockException
+import org.springframework.dao.PessimisticLockingFailureException
 import org.springframework.orm.ObjectOptimisticLockingFailureException
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
@@ -86,6 +88,11 @@ class TransferController(
     @ExceptionHandler(ObjectOptimisticLockingFailureException::class)
     fun handleOptimisticLock(): ResponseEntity<ErrorResponse> {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(ErrorResponse("동시성 충돌이 발생했습니다. 다시 시도해주세요."))
+    }
+
+    @ExceptionHandler(PessimisticLockingFailureException::class, CannotAcquireLockException::class)
+    fun handlePessimisticLock(): ResponseEntity<ErrorResponse> {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(ErrorResponse("락 획득에 실패했습니다. 다시 시도해주세요."))
     }
 
     @ExceptionHandler(MethodArgumentNotValidException::class)
