@@ -13,6 +13,7 @@ import com.bankcore.rate.entity.BaseRate
 import com.bankcore.rate.entity.SpreadRate
 import com.bankcore.rate.repository.BaseRateRepository
 import com.bankcore.rate.repository.SpreadRateRepository
+import com.bankcore.testsupport.TestcontainersIntegrationBase
 import com.bankcore.transaction.entity.TransactionType
 import com.bankcore.transaction.repository.TransactionRepository
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -22,8 +23,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
-import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.post
@@ -31,9 +30,7 @@ import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.ZoneId
 
-@SpringBootTest
-@AutoConfigureMockMvc
-class AccountLifecycleE2ETest {
+class AccountLifecycleE2ETest : TestcontainersIntegrationBase() {
 
     companion object {
         private const val PRODUCT_CODE = "SAV001"
@@ -70,7 +67,16 @@ class AccountLifecycleE2ETest {
 
     @BeforeEach
     fun setUp() {
-        earlyTerminationProductCode = "EARLY-${System.nanoTime()}"
+        if (productRepository.findByCode(PRODUCT_CODE) == null) {
+            productRepository.save(
+                Product(
+                    code = PRODUCT_CODE,
+                    name = "Basic Savings"
+                )
+            )
+        }
+
+        earlyTerminationProductCode = "E${System.nanoTime().toString().takeLast(19)}"
         val product = productRepository.save(
             Product(
                 code = earlyTerminationProductCode,

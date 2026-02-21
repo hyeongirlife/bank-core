@@ -5,6 +5,8 @@ import com.bankcore.account.dto.AccountCreateRequest
 import com.bankcore.account.dto.AccountResponse
 import com.bankcore.account.entity.Account
 import com.bankcore.account.repository.AccountRepository
+import com.bankcore.interest.repository.InterestLogRepository
+import com.bankcore.interest.repository.InterestSettlementRepository
 import com.bankcore.product.entity.Product
 import com.bankcore.product.repository.ProductRepository
 import com.bankcore.testsupport.TestcontainersIntegrationBase
@@ -53,8 +55,16 @@ class TransferPessimisticLockIntegrationTest : TestcontainersIntegrationBase() {
     @Autowired
     lateinit var transactionRepository: TransactionRepository
 
+    @Autowired
+    lateinit var interestLogRepository: InterestLogRepository
+
+    @Autowired
+    lateinit var interestSettlementRepository: InterestSettlementRepository
+
     @BeforeEach
     fun setUp() {
+        interestLogRepository.deleteAll()
+        interestSettlementRepository.deleteAll()
         transactionRepository.deleteAll()
         accountRepository.deleteAll()
 
