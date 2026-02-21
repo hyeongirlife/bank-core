@@ -76,17 +76,17 @@
 
 #### Phase 4-3 (예정)
 - ⏳ 분산락/비관적락/낙관락 전략별 TPS 벤치마크
-- ⏳ README 벤치마크 결과 반영
+- ✅ README 벤치마크 결과 반영 (분산락/비관적락 우선 반영, 낙관락은 Phase 4-2 연계 측정 예정)
 
-### Phase 5: 인프라 + 배포 (2-3일)
-- Dockerfile (멀티스테이지 빌드)
-- k8s 매니페스트 (namespace, MySQL StatefulSet + PVC AZ 고정, Deployment, CronJob)
-- GitHub Actions CI/CD (OIDC → ECR → kubectl apply)
+### Phase 5: 인프라 + 배포 (2-3일) ✅ 완료
+- ✅ Dockerfile (멀티스테이지 빌드)
+- ✅ k8s 매니페스트 (namespace, MySQL StatefulSet, Deployment, CronJob)
+- ✅ GitHub Actions CI/CD (OIDC → ECR → kubectl apply)
 
-### Phase 6: 문서화 + 이력서 (1-2일)
-- README 벤치마크 수치 업데이트
-- 이력서 프로젝트 섹션 추가
-- 블로그 포스팅 (선택)
+### Phase 6: 문서화 + 이력서 (1-2일) ✅ 완료
+- ✅ README 벤치마크 수치 업데이트
+- ✅ 이력서 프로젝트 섹션 추가
+- ⏳ 블로그 포스팅 (선택, 별도 진행)
 
 ## 주요 기능
 
