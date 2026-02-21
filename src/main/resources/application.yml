@@ -51,8 +51,8 @@ spring:
       on-profile: prod
   datasource:
     url: jdbc:mysql://mysql.minibank.svc.cluster.local:3306/minibank?useSSL=false&serverTimezone=Asia/Seoul
-    username: root
-    password: ${MYSQL_PASSWORD}
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD:${MYSQL_PASSWORD}}
   jpa:
     hibernate:
       ddl-auto: validate

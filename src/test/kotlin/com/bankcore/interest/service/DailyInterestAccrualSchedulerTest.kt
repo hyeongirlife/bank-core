@@ -16,6 +16,7 @@ import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.eq
+import org.mockito.kotlin.never
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
@@ -41,8 +42,8 @@ class DailyInterestAccrualSchedulerTest {
 
     private val fixedClock: Clock = Clock.fixed(Instant.parse("2026-02-21T00:00:00Z"), ZoneId.of("Asia/Seoul"))
 
-    private fun newScheduler(): DailyInterestAccrualScheduler {
-        return DailyInterestAccrualScheduler(accountRepository, dailyInterestAccrualService, fixedClock)
+    private fun newScheduler(runOnce: Boolean = false): DailyInterestAccrualScheduler {
+        return DailyInterestAccrualScheduler(accountRepository, dailyInterestAccrualService, runOnce, fixedClock)
     }
 
     @Test
@@ -129,11 +130,60 @@ class DailyInterestAccrualSchedulerTest {
             )
         )
 
-        assertDoesNotThrow {
+        val ex = org.junit.jupiter.api.assertThrows<IllegalStateException> {
             scheduler.runDailyAccrual()
         }
 
+        assertTrue(ex.message!!.contains("failureCount=1"))
         verify(dailyInterestAccrualService).accrueDailyInterest(eq(11L), any())
         verify(dailyInterestAccrualService).accrueDailyInterest(eq(12L), any())
+    }
+
+    @Test
+    fun `run-once 모드에서는 스케줄 실행을 건너뛴다`() {
+        val scheduler = newScheduler(runOnce = true)
+
+        scheduler.runDailyAccrual()
+
+        verify(accountRepository, never()).findAllByStatus(any(), any())
+        verify(dailyInterestAccrualService, never()).accrueDailyInterest(any(), any())
+    }
+
+    @Test
+    fun `run-once 전용 실행은 runOnce true여도 수행된다`() {
+        val scheduler = newScheduler(runOnce = true)
+        val product = Product(id = 1L, code = "SAV001", name = "Basic Savings")
+        val account = Account(
+            id = 21L,
+            customerId = 30L,
+            accountNumber = "100-000-000021",
+            product = product,
+            balance = BigDecimal("1000.00"),
+            status = AccountStatus.ACTIVE,
+            openedAt = LocalDateTime.of(2026, 1, 1, 9, 0)
+        )
+
+        whenever(accountRepository.findAllByStatus(eq(AccountStatus.ACTIVE), eq(PageRequest.of(0, 100, PAGE_SORT))))
+            .thenReturn(PageImpl(listOf(account), PageRequest.of(0, 100, PAGE_SORT), 1))
+        whenever(dailyInterestAccrualService.accrueDailyInterest(eq(21L), any())).thenReturn(
+            DailyInterestAccrualResponse(
+                accountId = 21L,
+                businessDate = LocalDate.of(2026, 2, 21),
+                baseRate = BigDecimal("0.0300"),
+                spreadRate = BigDecimal("0.0010"),
+                preferentialRate = BigDecimal("0.0000"),
+                appliedRate = BigDecimal("0.0310"),
+                balanceSnapshot = BigDecimal("1000.00"),
+                interestAmount = BigDecimal("0.08"),
+                alreadyProcessed = false
+            )
+        )
+
+        assertDoesNotThrow {
+            scheduler.runDailyAccrualOnce()
+        }
+
+        verify(accountRepository).findAllByStatus(eq(AccountStatus.ACTIVE), eq(PageRequest.of(0, 100, PAGE_SORT)))
+        verify(dailyInterestAccrualService).accrueDailyInterest(eq(21L), any())
     }
 }

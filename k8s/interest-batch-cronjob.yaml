@@ -1,0 +1,51 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: interest-daily-accrual
+  namespace: minibank
+spec:
+  schedule: "10 0 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          securityContext:
+            runAsNonRoot: true
+          restartPolicy: OnFailure
+          containers:
+            - name: interest-batch
+              image: ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: false
+                runAsNonRoot: true
+              resources:
+                requests:
+                  cpu: "250m"
+                  memory: "512Mi"
+                limits:
+                  cpu: "1000m"
+                  memory: "1024Mi"
+              env:
+                - name: SPRING_PROFILES_ACTIVE
+                  value: prod
+                - name: SPRING_TASK_SCHEDULING_ENABLED
+                  value: "false"
+                - name: SPRING_DATASOURCE_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: bank-core-secret
+                      key: mysql-app-username
+                - name: SPRING_DATASOURCE_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: bank-core-secret
+                      key: mysql-app-password
+              command:
+                - sh
+                - -c
+                - "java -jar /app/app.jar --interest.batch.run-once=true"

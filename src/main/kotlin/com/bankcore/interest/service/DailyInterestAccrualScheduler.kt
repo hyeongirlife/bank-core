@@ -4,6 +4,7 @@ import com.bankcore.account.entity.AccountStatus
 import com.bankcore.account.repository.AccountRepository
 import com.bankcore.interest.dto.DailyInterestAccrualRequest
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Sort
 import org.springframework.scheduling.annotation.Scheduled
@@ -16,6 +17,8 @@ import java.time.ZoneId
 class DailyInterestAccrualScheduler(
     private val accountRepository: AccountRepository,
     private val dailyInterestAccrualService: DailyInterestAccrualService,
+    @Value("\${interest.batch.run-once:false}")
+    private val runOnce: Boolean,
     private val clock: Clock = Clock.system(ZoneId.of("Asia/Seoul"))
 ) {
     companion object {
@@ -29,8 +32,21 @@ class DailyInterestAccrualScheduler(
         zone = "Asia/Seoul"
     )
     fun runDailyAccrual() {
+        if (runOnce) {
+            log.info("run-once 모드에서는 스케줄 실행을 건너뜁니다")
+            return
+        }
+        executeAccrual()
+    }
+
+    fun runDailyAccrualOnce() {
+        executeAccrual()
+    }
+
+    private fun executeAccrual() {
         val businessDate = LocalDate.now(clock)
         var page = 0
+        var failureCount = 0
 
         while (true) {
             val accounts = accountRepository.findAllByStatus(
@@ -51,6 +67,7 @@ class DailyInterestAccrualScheduler(
                         )
                     )
                 } catch (e: RuntimeException) {
+                    failureCount += 1
                     log.warn("일별 이자 적립 실패 - accountId={}, businessDate={}", account.id, businessDate, e)
                 }
             }
@@ -59,6 +76,10 @@ class DailyInterestAccrualScheduler(
                 break
             }
             page += 1
+        }
+
+        if (failureCount > 0) {
+            throw IllegalStateException("일별 이자 적립 중 실패가 발생했습니다. failureCount=$failureCount")
         }
     }
 }
