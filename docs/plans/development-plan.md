@@ -27,6 +27,35 @@
 - 잔액 부족, 해지 계좌 송금 등 예외 처리
 - 패키지: account/domain, account/application, account/infra, account/api
 
+#### Phase 2-추가: 패키지 구조 전환 계획 (클린 아키텍처 전환 아님)
+- **목적**: 기능 변경 없이 코드 역할을 명확히 분리해 유지보수성을 높임
+- **핵심 원칙**:
+  - 파일 위치/네이밍만 정리하고 기존 동작은 유지
+  - 의존성 역전(Port/Adapter)까지는 하지 않음
+  - 서비스가 JPA/Redis 구현체를 직접 참조하는 현재 방식은 유지
+
+- **전환 범위(도메인별 동일 규칙 적용)**
+  - `api`: Controller, 요청/응답 DTO, API 예외 매핑
+  - `application`: Service(유스케이스 오케스트레이션, 트랜잭션 경계)
+  - `domain`: Entity/Enum/도메인 상태 모델
+  - `infra`: Repository, 번호 생성기, 락/외부 저장소 연동
+
+- **비범위(이번 전환에서 하지 않음)**
+  - 클린 아키텍처식 Port 인터페이스 분리
+  - Application 계층의 프레임워크 완전 독립화
+  - 대규모 비즈니스 로직 재작성
+
+- **실행 단계**
+  1. 현재 클래스별 1:1 이동 매핑표 확정 (account/transfer/transaction)
+  2. 패키지 이동 + `package` 선언/`import` 일괄 정리
+  3. 컴파일 확인 및 주요 API 수동 스모크 테스트
+  4. 회귀 테스트 실행 (`account/transfer` 대상 + 전체 `./gradlew test`)
+
+- **완료 기준**
+  - 외부 API 스펙/동작 변화 없음
+  - 계좌/송금/원장 관련 테스트 전부 통과
+  - 코드 탐색 시 계층 책임(api/application/domain/infra)이 일관되게 보임
+
 ### Phase 3: 금리 + 이자 도메인 (3-5일)
 - DB 스키마: base_rate, spread_rate, preferential_rate, interest_log 테이블
 - 금리 산출 API: 기준금리 + 가산금리 + 우대금리 조합
