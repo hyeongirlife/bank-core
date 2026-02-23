@@ -36,5 +36,13 @@ out/
 ### VS Code ###
 .vscode/
 
+### Node ###
+node_modules/
+apps/web/node_modules/
+apps/web/.next/
+apps/web/tsconfig.tsbuildinfo
+.env*
+apps/web/.env*
+
 ### Mac ###
 .DS_Store
