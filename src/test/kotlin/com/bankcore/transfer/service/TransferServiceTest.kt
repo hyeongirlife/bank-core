@@ -10,16 +10,25 @@ import com.bankcore.transaction.entity.TransactionType
 import com.bankcore.transaction.repository.TransactionRepository
 import com.bankcore.transaction.service.TransactionNumberGenerator
 import com.bankcore.transfer.dto.TransferRequest
+import com.bankcore.transfer.dto.TransferResponse
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.extension.ExtendWith
-import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.junit.jupiter.MockitoExtension
-import org.mockito.kotlin.*
+import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.inOrder
+import org.mockito.kotlin.never
+import org.mockito.kotlin.times
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.verifyNoInteractions
+import org.mockito.kotlin.whenever
 import java.math.BigDecimal
 import java.time.LocalDateTime
 import java.util.Optional
@@ -38,9 +47,14 @@ class TransferServiceTest {
     @Mock lateinit var transactionNumberGenerator: TransactionNumberGenerator
     @Mock lateinit var distributedLockService: DistributedLockService
 
-    @InjectMocks lateinit var transferService: TransferService
+    private lateinit var transferService: TransferService
 
     private val product = Product(id = 1L, code = "SAV001", name = "Basic Savings")
+
+    @BeforeEach
+    fun setUp() {
+        transferService = createTransferService("DISTRIBUTED")
+    }
 
     @Test
     fun `계좌 간 송금을 정상 처리한다`() {
@@ -205,7 +219,7 @@ class TransferServiceTest {
 
         transferService.transfer(request)
 
-        verify(distributedLockService).executeWithLock(eq("account-transfer"), eq("3:9"), any<() -> Any>())
+        verify(distributedLockService).executeWithLock(eq("account-transfer"), eq("3:9"), any<() -> TransferResponse>())
     }
 
     @Test
@@ -235,9 +249,95 @@ class TransferServiceTest {
         assertTrue(types.contains(TransactionType.TRANSFER_IN))
     }
 
+    @Test
+    fun `비관적 락 전략에서는 계좌 ID 정렬 순서로 잠금을 획득한다`() {
+        val service = createTransferService("PESSIMISTIC")
+        val request = TransferRequest(
+            fromAccountId = 9L,
+            toAccountId = 3L,
+            amount = TRANSFER_AMOUNT
+        )
+
+        whenever(accountRepository.findByIdForUpdate(3L)).thenReturn(activeAccount(3L, BigDecimal("200.00")))
+        whenever(accountRepository.findByIdForUpdate(9L)).thenReturn(activeAccount(9L, BigDecimal("1000.00")))
+        whenever(accountRepository.save(any<Account>())).thenAnswer { it.arguments[0] as Account }
+        whenever(transactionNumberGenerator.generate()).thenReturn("TXN-OUT-1", "TXN-IN-1")
+        whenever(transactionRepository.save(any<Transaction>())).thenAnswer { it.arguments[0] as Transaction }
+
+        val response = service.transfer(request)
+
+        val order = inOrder(accountRepository)
+        order.verify(accountRepository).findByIdForUpdate(3L)
+        order.verify(accountRepository).findByIdForUpdate(9L)
+        verify(distributedLockService, never()).executeWithLock(any(), any(), any<() -> TransferResponse>())
+        assertEquals(BigDecimal("700.00"), response.fromBalance)
+        assertEquals(BigDecimal("500.00"), response.toBalance)
+    }
+
+    @Test
+    fun `비관적 락 전략에서 출금 계좌가 없으면 예외를 던진다`() {
+        val service = createTransferService("PESSIMISTIC")
+        val request = TransferRequest(
+            fromAccountId = FROM_ACCOUNT_ID,
+            toAccountId = TO_ACCOUNT_ID,
+            amount = TRANSFER_AMOUNT
+        )
+
+        whenever(accountRepository.findByIdForUpdate(FROM_ACCOUNT_ID)).thenReturn(null)
+
+        val ex = assertThrows<NoSuchElementException> {
+            service.transfer(request)
+        }
+
+        assertEquals("출금 계좌를 찾을 수 없습니다: 1", ex.message)
+    }
+
+    @Test
+    fun `비관적 락 전략에서 입금 계좌가 없으면 예외를 던진다`() {
+        val service = createTransferService("PESSIMISTIC")
+        val request = TransferRequest(
+            fromAccountId = FROM_ACCOUNT_ID,
+            toAccountId = TO_ACCOUNT_ID,
+            amount = TRANSFER_AMOUNT
+        )
+
+        whenever(accountRepository.findByIdForUpdate(FROM_ACCOUNT_ID))
+            .thenReturn(activeAccount(FROM_ACCOUNT_ID, BigDecimal("1000.00")))
+        whenever(accountRepository.findByIdForUpdate(TO_ACCOUNT_ID)).thenReturn(null)
+
+        val ex = assertThrows<NoSuchElementException> {
+            service.transfer(request)
+        }
+
+        assertEquals("입금 계좌를 찾을 수 없습니다: 2", ex.message)
+    }
+
+    @Test
+    fun `지원하지 않는 락 전략이면 생성 시 예외를 던진다`() {
+        val ex = assertThrows<IllegalArgumentException> {
+            createTransferService("UNKNOWN")
+        }
+
+        assertEquals("지원하지 않는 송금 락 전략입니다: UNKNOWN", ex.message)
+    }
+
+    private fun createTransferService(lockStrategy: String): TransferService {
+        return TransferService(
+            accountRepository = accountRepository,
+            transactionRepository = transactionRepository,
+            transactionNumberGenerator = transactionNumberGenerator,
+            distributedLockService = distributedLockService,
+            lockStrategy = lockStrategy
+        )
+    }
+
     private fun mockLockExecution(sortedKey: String) {
         whenever(distributedLockService.executeWithLock(eq("account-transfer"), eq(sortedKey), any<() -> Any>()))
-            .thenAnswer { (it.arguments[2] as () -> Any).invoke() }
+            .thenAnswer {
+                @Suppress("UNCHECKED_CAST")
+                val action = it.arguments[2] as () -> TransferResponse
+                action.invoke()
+            }
     }
 
     private fun activeAccount(id: Long, balance: BigDecimal) = Account(

@@ -6,6 +6,7 @@ import com.bankcore.account.entity.Account
 import com.bankcore.account.entity.AccountStatus
 import com.bankcore.account.repository.AccountRepository
 import com.bankcore.common.lock.DistributedLockService
+import com.bankcore.interest.service.EarlyTerminationSettlementService
 import com.bankcore.product.entity.Product
 import com.bankcore.product.repository.ProductRepository
 import com.bankcore.transaction.entity.Transaction
@@ -13,15 +14,19 @@ import com.bankcore.transaction.entity.TransactionType
 import com.bankcore.transaction.repository.TransactionRepository
 import com.bankcore.transaction.service.TransactionNumberGenerator
 import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.extension.ExtendWith
-import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.kotlin.*
 import java.math.BigDecimal
+import java.time.Clock
+import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.util.Optional
 
 @ExtendWith(MockitoExtension::class)
@@ -40,10 +45,26 @@ class AccountServiceTest {
     @Mock lateinit var distributedLockService: DistributedLockService
     @Mock lateinit var transactionRepository: TransactionRepository
     @Mock lateinit var transactionNumberGenerator: TransactionNumberGenerator
+    @Mock lateinit var earlyTerminationSettlementService: EarlyTerminationSettlementService
 
-    @InjectMocks lateinit var accountService: AccountService
+    lateinit var accountService: AccountService
 
+    private val fixedClock: Clock = Clock.fixed(Instant.parse("2026-02-21T00:00:00Z"), ZoneId.of("Asia/Seoul"))
     private val product = Product(id = 1L, code = PRODUCT_CODE, name = "Basic Savings")
+
+    @BeforeEach
+    fun setUp() {
+        accountService = AccountService(
+            accountRepository = accountRepository,
+            productRepository = productRepository,
+            accountNumberGenerator = accountNumberGenerator,
+            distributedLockService = distributedLockService,
+            transactionRepository = transactionRepository,
+            transactionNumberGenerator = transactionNumberGenerator,
+            earlyTerminationSettlementService = earlyTerminationSettlementService,
+            clock = fixedClock
+        )
+    }
 
     @Test
     fun `계좌를 정상적으로 개설한다`() {
@@ -208,6 +229,55 @@ class AccountServiceTest {
     }
 
     @Test
+    fun `중도해지 대상 계좌 해지 시 정산 서비스를 호출한다`() {
+        val maturityDate = LocalDate.now(fixedClock).plusDays(7)
+        val account = activeAccount(maturityDate = maturityDate)
+
+        whenever(distributedLockService.executeWithLock(eq("account"), eq("$ACCOUNT_ID"), any<() -> Any>()))
+            .thenAnswer { (it.arguments[2] as () -> Any).invoke() }
+        whenever(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account))
+        whenever(accountRepository.save(any<Account>())).thenAnswer { it.arguments[0] as Account }
+
+        accountService.closeAccount(ACCOUNT_ID)
+
+        val businessDateCaptor = argumentCaptor<LocalDate>()
+        verify(earlyTerminationSettlementService).settleOnClose(eq(account), businessDateCaptor.capture())
+        assertTrue(businessDateCaptor.firstValue.isBefore(maturityDate))
+    }
+
+    @Test
+    fun `만기 후 해지 시 중도해지 정산을 호출하지 않는다`() {
+        val maturedAccount = activeAccount(maturityDate = LocalDate.now(fixedClock).minusDays(1))
+
+        whenever(distributedLockService.executeWithLock(eq("account"), eq("$ACCOUNT_ID"), any<() -> Any>()))
+            .thenAnswer { (it.arguments[2] as () -> Any).invoke() }
+        whenever(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(maturedAccount))
+        whenever(accountRepository.save(any<Account>())).thenAnswer { it.arguments[0] as Account }
+
+        accountService.closeAccount(ACCOUNT_ID)
+
+        verify(earlyTerminationSettlementService, never()).settleOnClose(any<Account>(), any<LocalDate>())
+    }
+
+    @Test
+    fun `중도해지 정산 실패 시 계좌 해지를 롤백한다`() {
+        val account = activeAccount(maturityDate = LocalDate.now(fixedClock).plusDays(7))
+
+        whenever(distributedLockService.executeWithLock(eq("account"), eq("$ACCOUNT_ID"), any<() -> Any>()))
+            .thenAnswer { (it.arguments[2] as () -> Any).invoke() }
+        whenever(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account))
+        whenever(earlyTerminationSettlementService.settleOnClose(any(), any()))
+            .thenThrow(IllegalStateException("중도해지 정산 실패"))
+
+        val ex = assertThrows<IllegalStateException> {
+            accountService.closeAccount(ACCOUNT_ID)
+        }
+
+        assertEquals("중도해지 정산 실패", ex.message)
+        verify(accountRepository, never()).save(any<Account>())
+    }
+
+    @Test
     fun `계좌 입금을 정상 처리한다`() {
         val request = AccountBalanceChangeRequest(amount = BigDecimal("1000000000.00"))
         whenever(distributedLockService.executeWithLock(eq("account"), eq("$ACCOUNT_ID"), any<() -> Any>()))
@@ -261,13 +331,17 @@ class AccountServiceTest {
         assertEquals("잔액이 부족합니다", ex.message)
     }
 
-    private fun activeAccount(balance: BigDecimal = BigDecimal("0.00")) = Account(
+    private fun activeAccount(
+        balance: BigDecimal = BigDecimal("0.00"),
+        maturityDate: LocalDate? = null
+    ) = Account(
         id = ACCOUNT_ID,
         customerId = CUSTOMER_ID,
         accountNumber = ACCOUNT_NUMBER,
         product = product,
         balance = balance,
         status = AccountStatus.ACTIVE,
+        maturityDate = maturityDate,
         openedAt = LocalDateTime.now(),
         closedAt = null,
         createdAt = LocalDateTime.now(),

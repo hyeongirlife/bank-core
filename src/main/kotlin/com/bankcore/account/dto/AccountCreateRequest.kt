@@ -3,6 +3,7 @@ package com.bankcore.account.dto
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Positive
+import java.time.LocalDate
 
 @Schema(description = "계좌 개설 요청")
 data class AccountCreateRequest(
@@ -12,5 +13,8 @@ data class AccountCreateRequest(
 
     @field:Schema(description = "상품 코드", example = "SAV001")
     @field:NotBlank
-    val productCode: String
+    val productCode: String,
+
+    @field:Schema(description = "만기일(선택)", example = "2026-12-31", nullable = true)
+    val maturityDate: LocalDate? = null
 )
