@@ -35,7 +35,7 @@ import java.util.concurrent.Future
 class TransferConcurrencyReproductionTest : TestcontainersIntegrationBase() {
 
     companion object {
-        private const val PRODUCT_CODE = "TRF-RACE-001"
+        private const val PRODUCT_CODE = "TRFRACE001"
         private val INITIAL_BALANCE = BigDecimal("1000.00")
         private val TRANSFER_AMOUNT = BigDecimal("100.00")
         private const val TOTAL_REQUESTS = 20
