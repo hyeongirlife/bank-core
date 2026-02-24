@@ -42,6 +42,11 @@ class AccountController(
                 content = [Content(schema = Schema(implementation = ErrorResponse::class))]
             ),
             ApiResponse(
+                responseCode = "404",
+                description = "상품을 찾을 수 없음",
+                content = [Content(schema = Schema(implementation = ErrorResponse::class))]
+            ),
+            ApiResponse(
                 responseCode = "409",
                 description = "비즈니스 규칙 위반",
                 content = [Content(schema = Schema(implementation = ErrorResponse::class))]
@@ -207,18 +212,35 @@ class AccountController(
 
     @ExceptionHandler(NoSuchElementException::class)
     fun handleNotFound(e: NoSuchElementException): ResponseEntity<ErrorResponse> {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ErrorResponse(e.message ?: "Not Found"))
+        val message = if ((e.message ?: "").startsWith("상품을 찾을 수 없습니다")) {
+            "상품을 찾을 수 없습니다"
+        } else {
+            e.message ?: "Not Found"
+        }
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ErrorResponse(message))
     }
 
     @ExceptionHandler(MethodArgumentNotValidException::class)
     fun handleValidation(e: MethodArgumentNotValidException): ResponseEntity<ErrorResponse> {
-        val message = e.bindingResult.fieldErrors.firstOrNull()?.defaultMessage ?: "Bad Request"
+        val prioritizedFieldError = e.bindingResult.fieldErrors.firstOrNull {
+            it.code == "NotNull" || it.code == "NotBlank"
+        } ?: e.bindingResult.fieldErrors.firstOrNull()
+
+        val message = prioritizedFieldError?.defaultMessage
+            ?: e.bindingResult.globalErrors.firstOrNull()?.defaultMessage
+            ?: "Bad Request"
+        return ResponseEntity.badRequest().body(ErrorResponse(message))
+    }
+
+    @ExceptionHandler(jakarta.validation.ConstraintViolationException::class)
+    fun handleConstraintViolation(e: jakarta.validation.ConstraintViolationException): ResponseEntity<ErrorResponse> {
+        val message = e.constraintViolations.firstOrNull()?.message ?: "Bad Request"
         return ResponseEntity.badRequest().body(ErrorResponse(message))
     }
 
     @ExceptionHandler(HttpMessageNotReadableException::class)
     fun handleMessageNotReadable(): ResponseEntity<ErrorResponse> {
-        return ResponseEntity.badRequest().body(ErrorResponse("Bad Request"))
+        return ResponseEntity.badRequest().body(ErrorResponse("요청 본문 형식이 올바르지 않습니다"))
     }
 
     @ExceptionHandler(ObjectOptimisticLockingFailureException::class)

@@ -231,6 +231,35 @@ class AccountLifecycleE2ETest : TestcontainersIntegrationBase() {
     }
 
     @Test
+    fun `존재하지 않는 상품 코드로 계좌 개설 시 404를 반환한다`() {
+        val request = AccountCreateRequest(
+            customerId = System.currentTimeMillis(),
+            productCode = "MISS001"
+        )
+
+        mockMvc.post("/api/accounts") {
+            contentType = MediaType.APPLICATION_JSON
+            content = objectMapper.writeValueAsString(request)
+        }.andExpect {
+            status { isNotFound() }
+            jsonPath("$.error") { value("상품을 찾을 수 없습니다") }
+        }
+    }
+
+    @Test
+    fun `customerId가 누락된 계좌 개설 요청 시 400과 검증 메시지를 반환한다`() {
+        mockMvc.post("/api/accounts") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """
+                {"productCode":"SAV001"}
+            """.trimIndent()
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error") { value("고객 ID는 필수입니다") }
+        }
+    }
+
+    @Test
     fun `만기 경과 계좌 해지는 중도해지 정산을 생성하지 않는다`() {
         val maturedAccount = createAccount(
             productCode = earlyTerminationProductCode,

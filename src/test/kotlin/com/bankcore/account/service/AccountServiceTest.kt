@@ -97,10 +97,30 @@ class AccountServiceTest {
             .thenAnswer { (it.arguments[2] as () -> Any).invoke() }
         whenever(productRepository.findByCode("INVALID")).thenReturn(null)
 
-        val ex = assertThrows<IllegalArgumentException> {
+        val ex = assertThrows<NoSuchElementException> {
             accountService.createAccount(request)
         }
-        assertEquals("상품을 찾을 수 없습니다: INVALID", ex.message)
+        assertEquals("상품을 찾을 수 없습니다", ex.message)
+    }
+
+    @Test
+    fun `상품 코드 앞뒤 공백은 제거하고 조회한다`() {
+        val request = AccountCreateRequest(customerId = CUSTOMER_ID, productCode = "  SAV001  ")
+
+        whenever(distributedLockService.executeWithLock(eq("account"), eq("$CUSTOMER_ID:SAV001"), any<() -> Any>()))
+            .thenAnswer { (it.arguments[2] as () -> Any).invoke() }
+        whenever(productRepository.findByCode("SAV001")).thenReturn(product)
+        whenever(accountNumberGenerator.generate()).thenReturn(ACCOUNT_NUMBER)
+        whenever(accountRepository.save(any<Account>())).thenAnswer {
+            val account = it.arguments[0] as Account
+            account.copy(id = ACCOUNT_ID)
+        }
+
+        val response = accountService.createAccount(request)
+
+        assertEquals(PRODUCT_CODE, response.productCode)
+        verify(productRepository).findByCode("SAV001")
+        verify(distributedLockService).executeWithLock(eq("account"), eq("$CUSTOMER_ID:SAV001"), any<() -> Any>())
     }
 
     @Test

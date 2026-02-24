@@ -59,22 +59,23 @@ class AccountControllerTest {
     }
 
     @Test
-    fun `존재하지 않는 상품 코드로 요청 시 400을 반환한다`() {
+    fun `존재하지 않는 상품 코드로 요청 시 404를 반환한다`() {
         val request = AccountCreateRequest(customerId = 1L, productCode = "INVALID")
 
         whenever(accountService.createAccount(any()))
-            .thenThrow(IllegalArgumentException("상품을 찾을 수 없습니다: INVALID"))
+            .thenThrow(NoSuchElementException("상품을 찾을 수 없습니다"))
 
         mockMvc.post("/api/accounts") {
             contentType = MediaType.APPLICATION_JSON
             content = objectMapper.writeValueAsString(request)
         }.andExpect {
-            status { isBadRequest() }
+            status { isNotFound() }
+            jsonPath("$.error") { value("상품을 찾을 수 없습니다") }
         }
     }
 
     @Test
-    fun `빈 상품 코드로 요청 시 400을 반환한다`() {
+    fun `빈 상품 코드로 요청 시 400과 검증 메시지를 반환한다`() {
         val request = AccountCreateRequest(customerId = 1L, productCode = "")
 
         mockMvc.post("/api/accounts") {
@@ -82,11 +83,38 @@ class AccountControllerTest {
             content = objectMapper.writeValueAsString(request)
         }.andExpect {
             status { isBadRequest() }
+            jsonPath("$.error") { value("상품 코드는 필수입니다") }
         }
     }
 
     @Test
-    fun `음수 고객 ID로 요청 시 400을 반환한다`() {
+    fun `소문자 상품 코드로 요청 시 400과 검증 메시지를 반환한다`() {
+        val request = AccountCreateRequest(customerId = 1L, productCode = "sav001")
+
+        mockMvc.post("/api/accounts") {
+            contentType = MediaType.APPLICATION_JSON
+            content = objectMapper.writeValueAsString(request)
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error") { value("상품 코드는 대문자/숫자 3~20자리여야 합니다") }
+        }
+    }
+
+    @Test
+    fun `공백 포함 상품 코드로 요청 시 400과 검증 메시지를 반환한다`() {
+        val request = AccountCreateRequest(customerId = 1L, productCode = "SAV 001")
+
+        mockMvc.post("/api/accounts") {
+            contentType = MediaType.APPLICATION_JSON
+            content = objectMapper.writeValueAsString(request)
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error") { value("상품 코드는 대문자/숫자 3~20자리여야 합니다") }
+        }
+    }
+
+    @Test
+    fun `음수 고객 ID로 요청 시 400과 검증 메시지를 반환한다`() {
         val request = AccountCreateRequest(customerId = -1L, productCode = "SAV001")
 
         mockMvc.post("/api/accounts") {
@@ -94,6 +122,18 @@ class AccountControllerTest {
             content = objectMapper.writeValueAsString(request)
         }.andExpect {
             status { isBadRequest() }
+            jsonPath("$.error") { value("고객 ID는 1 이상이어야 합니다") }
+        }
+    }
+
+    @Test
+    fun `잘못된 JSON 본문으로 요청 시 400과 본문 형식 오류 메시지를 반환한다`() {
+        mockMvc.post("/api/accounts") {
+            contentType = MediaType.APPLICATION_JSON
+            content = "{invalid-json}"
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error") { value("요청 본문 형식이 올바르지 않습니다") }
         }
     }
 
