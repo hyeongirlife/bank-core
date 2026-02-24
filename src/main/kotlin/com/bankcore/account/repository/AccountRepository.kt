@@ -16,8 +16,14 @@ interface AccountRepository : JpaRepository<Account, Long> {
     fun countByCustomerIdAndProductCodeAndStatus(customerId: Long, productCode: String, status: AccountStatus): Long
     fun existsByAccountNumber(accountNumber: String): Boolean
     fun findAllByStatus(status: AccountStatus, pageable: Pageable): Page<Account>
+    fun findFirstByCustomerIdAndProductCodeAndStatusOrderByIdAsc(
+        customerId: Long,
+        productCode: String,
+        status: AccountStatus
+    ): Account?
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select a from Account a where a.id = :id")
     fun findByIdForUpdate(@Param("id") id: Long): Account?
+
 }

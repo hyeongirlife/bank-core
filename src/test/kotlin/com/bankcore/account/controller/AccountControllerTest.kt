@@ -4,6 +4,7 @@ import com.bankcore.account.dto.AccountBalanceChangeRequest
 import com.bankcore.account.dto.AccountCreateRequest
 import com.bankcore.account.dto.AccountResponse
 import com.bankcore.account.entity.AccountStatus
+import com.bankcore.account.service.AccountBootstrapService
 import com.bankcore.account.service.AccountService
 import com.bankcore.common.idempotency.IdempotencyService
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -27,6 +28,7 @@ class AccountControllerTest {
     @Autowired lateinit var mockMvc: MockMvc
     @Autowired lateinit var objectMapper: ObjectMapper
     @MockitoBean lateinit var accountService: AccountService
+    @MockitoBean lateinit var accountBootstrapService: AccountBootstrapService
     @MockitoBean lateinit var idempotencyService: IdempotencyService
 
     @Test
@@ -135,6 +137,56 @@ class AccountControllerTest {
             status { isBadRequest() }
             jsonPath("$.error") { value("요청 본문 형식이 올바르지 않습니다") }
         }
+    }
+
+    @Test
+    fun `초기 계좌 upsert 요청 시 200과 목록을 반환한다`() {
+        val now = LocalDateTime.now()
+        val responses = listOf(
+            AccountResponse(
+                id = 101L,
+                customerId = 1L,
+                accountNumber = "110-123-456789",
+                productCode = "SAV001",
+                productName = "Basic Savings",
+                balance = BigDecimal("0.00"),
+                status = AccountStatus.ACTIVE,
+                openedAt = now,
+                closedAt = null
+            ),
+            AccountResponse(
+                id = 102L,
+                customerId = 1L,
+                accountNumber = "110-987-654321",
+                productCode = "CHK001",
+                productName = "Basic Checking",
+                balance = BigDecimal("0.00"),
+                status = AccountStatus.ACTIVE,
+                openedAt = now,
+                closedAt = null
+            )
+        )
+
+        whenever(accountBootstrapService.upsertInitialAccounts(1L)).thenReturn(responses)
+
+        mockMvc.post("/api/accounts/bootstrap") {
+            param("customerId", "1")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$[0].id") { value(101) }
+            jsonPath("$[0].productCode") { value("SAV001") }
+            jsonPath("$[1].id") { value(102) }
+            jsonPath("$[1].productCode") { value("CHK001") }
+        }
+    }
+
+    @Test
+    fun `초기 계좌 upsert 요청에서 customerId가 누락되면 400과 메시지를 반환한다`() {
+        mockMvc.post("/api/accounts/bootstrap")
+            .andExpect {
+                status { isBadRequest() }
+                jsonPath("$.error") { value("요청 파라미터가 누락되었습니다: customerId") }
+            }
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.bankcore.account.controller
 import com.bankcore.account.dto.AccountBalanceChangeRequest
 import com.bankcore.account.dto.AccountCreateRequest
 import com.bankcore.account.dto.AccountResponse
+import com.bankcore.account.service.AccountBootstrapService
 import com.bankcore.account.service.AccountService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -18,6 +19,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
 import org.springframework.orm.ObjectOptimisticLockingFailureException
 import org.springframework.web.bind.MethodArgumentNotValidException
+import org.springframework.web.bind.MissingServletRequestParameterException
 import org.springframework.web.bind.annotation.*
 
 @Schema(description = "공통 에러 응답")
@@ -30,7 +32,8 @@ data class ErrorResponse(
 @RestController
 @RequestMapping("/api/accounts")
 class AccountController(
-    private val accountService: AccountService
+    private val accountService: AccountService,
+    private val accountBootstrapService: AccountBootstrapService
 ) {
     @Operation(summary = "계좌 개설", description = "신규 계좌를 개설합니다")
     @ApiResponses(
@@ -67,6 +70,36 @@ class AccountController(
     ): ResponseEntity<AccountResponse> {
         val response = accountService.createAccount(request)
         return ResponseEntity.status(HttpStatus.CREATED).body(response)
+    }
+
+    @Operation(summary = "초기 계좌 upsert", description = "최초 로그인/재로그인 시 초기 계좌를 upsert 합니다")
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "초기 계좌 upsert 성공"),
+            ApiResponse(
+                responseCode = "400",
+                description = "요청 값 검증 실패",
+                content = [Content(schema = Schema(implementation = ErrorResponse::class))]
+            ),
+            ApiResponse(
+                responseCode = "404",
+                description = "초기화 상품을 찾을 수 없음",
+                content = [Content(schema = Schema(implementation = ErrorResponse::class))]
+            ),
+            ApiResponse(
+                responseCode = "409",
+                description = "동시 요청 충돌",
+                content = [Content(schema = Schema(implementation = ErrorResponse::class))]
+            )
+        ]
+    )
+    @PostMapping("/bootstrap")
+    fun upsertInitialAccounts(
+        @Parameter(description = "고객 ID", example = "1")
+        @RequestParam customerId: Long
+    ): ResponseEntity<List<AccountResponse>> {
+        val response = accountBootstrapService.upsertInitialAccounts(customerId)
+        return ResponseEntity.ok(response)
     }
 
     @Operation(summary = "계좌 조회", description = "계좌 ID로 계좌 정보를 조회합니다")
@@ -241,6 +274,11 @@ class AccountController(
     @ExceptionHandler(HttpMessageNotReadableException::class)
     fun handleMessageNotReadable(): ResponseEntity<ErrorResponse> {
         return ResponseEntity.badRequest().body(ErrorResponse("요청 본문 형식이 올바르지 않습니다"))
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException::class)
+    fun handleMissingRequestParameter(e: MissingServletRequestParameterException): ResponseEntity<ErrorResponse> {
+        return ResponseEntity.badRequest().body(ErrorResponse("요청 파라미터가 누락되었습니다: ${e.parameterName}"))
     }
 
     @ExceptionHandler(ObjectOptimisticLockingFailureException::class)

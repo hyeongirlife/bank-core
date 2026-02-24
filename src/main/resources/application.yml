@@ -6,6 +6,10 @@ transfer:
   lock:
     strategy: DISTRIBUTED
 
+account:
+  bootstrap:
+    product-codes: SAV001,CHK001
+
 ---
 spring:
   config:
