@@ -7,6 +7,8 @@ import com.bankcore.product.entity.Product
 import com.bankcore.product.repository.ProductRepository
 import com.bankcore.testsupport.TestcontainersIntegrationBase
 import com.fasterxml.jackson.databind.ObjectMapper
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
@@ -22,6 +24,7 @@ class AccountBootstrapE2ETest : TestcontainersIntegrationBase() {
         private const val CUSTOMER_ID_PARTIAL = 910002L
         private const val PRODUCT_A = "SAV001"
         private const val PRODUCT_B = "CHK001"
+        private const val SIGNING_SECRET = "test-bootstrap-signing-secret-0123456789"
     }
 
     @Autowired lateinit var mockMvc: MockMvc
@@ -101,8 +104,13 @@ class AccountBootstrapE2ETest : TestcontainersIntegrationBase() {
     }
 
     private fun bootstrap(customerId: Long): List<AccountResponse> {
+        val timestamp = (System.currentTimeMillis() / 1000).toString()
+        val signature = sign("$customerId:$timestamp")
+
         val result = mockMvc.post("/api/accounts/bootstrap") {
-            param("customerId", customerId.toString())
+            header("X-Customer-Id", customerId.toString())
+            header("X-Customer-Timestamp", timestamp)
+            header("X-Customer-Signature", signature)
         }.andExpect {
             status { isOk() }
         }.andReturn()
@@ -116,5 +124,12 @@ class AccountBootstrapE2ETest : TestcontainersIntegrationBase() {
         if (productRepository.findByCode(code) == null) {
             productRepository.save(Product(code = code, name = name))
         }
+    }
+
+    private fun sign(payload: String): String {
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(SIGNING_SECRET.toByteArray(), "HmacSHA256"))
+        val bytes = mac.doFinal(payload.toByteArray())
+        return bytes.joinToString(separator = "") { "%02x".format(it) }
     }
 }

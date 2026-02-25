@@ -3,6 +3,7 @@ package com.bankcore.account.controller
 import com.bankcore.account.dto.AccountBalanceChangeRequest
 import com.bankcore.account.dto.AccountCreateRequest
 import com.bankcore.account.dto.AccountResponse
+import com.bankcore.account.security.BootstrapAuthVerifier
 import com.bankcore.account.service.AccountBootstrapService
 import com.bankcore.account.service.AccountService
 import io.swagger.v3.oas.annotations.Operation
@@ -33,7 +34,8 @@ data class ErrorResponse(
 @RequestMapping("/api/accounts")
 class AccountController(
     private val accountService: AccountService,
-    private val accountBootstrapService: AccountBootstrapService
+    private val accountBootstrapService: AccountBootstrapService,
+    private val bootstrapAuthVerifier: BootstrapAuthVerifier
 ) {
     @Operation(summary = "계좌 개설", description = "신규 계좌를 개설합니다")
     @ApiResponses(
@@ -95,10 +97,33 @@ class AccountController(
     )
     @PostMapping("/bootstrap")
     fun upsertInitialAccounts(
-        @Parameter(description = "고객 ID", example = "1")
-        @RequestParam customerId: Long
+        @Parameter(
+            name = BootstrapAuthVerifier.CUSTOMER_HEADER,
+            description = "인증된 고객 ID",
+            required = true,
+            `in` = ParameterIn.HEADER,
+            example = "1"
+        )
+        @RequestHeader(name = BootstrapAuthVerifier.CUSTOMER_HEADER, required = false) customerId: String?,
+        @Parameter(
+            name = BootstrapAuthVerifier.TIMESTAMP_HEADER,
+            description = "요청 시각 epoch second",
+            required = true,
+            `in` = ParameterIn.HEADER,
+            example = "1739942400"
+        )
+        @RequestHeader(name = BootstrapAuthVerifier.TIMESTAMP_HEADER, required = false) timestamp: String?,
+        @Parameter(
+            name = BootstrapAuthVerifier.SIGNATURE_HEADER,
+            description = "HMAC-SHA256(customerId:timestamp) hex",
+            required = true,
+            `in` = ParameterIn.HEADER,
+            example = "7f4f5f4f7e5f4f7e5f4f7e5f4f7e5f4f7e5f4f7e5f4f7e5f4f7e5f4f7e5f4f7e"
+        )
+        @RequestHeader(name = BootstrapAuthVerifier.SIGNATURE_HEADER, required = false) signature: String?
     ): ResponseEntity<List<AccountResponse>> {
-        val response = accountBootstrapService.upsertInitialAccounts(customerId)
+        bootstrapAuthVerifier.verifyOrThrow(customerId, timestamp, signature)
+        val response = accountBootstrapService.upsertInitialAccounts(customerId!!.toLong())
         return ResponseEntity.ok(response)
     }
 

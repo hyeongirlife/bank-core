@@ -9,6 +9,7 @@ transfer:
 account:
   bootstrap:
     product-codes: SAV001,CHK001
+    auth-signing-secret: ${ACCOUNT_BOOTSTRAP_AUTH_SIGNING_SECRET}
 
 ---
 spring:

@@ -4,13 +4,17 @@ import com.bankcore.account.dto.AccountBalanceChangeRequest
 import com.bankcore.account.dto.AccountCreateRequest
 import com.bankcore.account.dto.AccountResponse
 import com.bankcore.account.entity.AccountStatus
+import com.bankcore.account.security.BootstrapAuthVerifier
 import com.bankcore.account.service.AccountBootstrapService
 import com.bankcore.account.service.AccountService
 import com.bankcore.common.idempotency.IdempotencyService
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.doThrow
 import org.mockito.kotlin.eq
+import org.mockito.kotlin.never
+import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
@@ -29,6 +33,7 @@ class AccountControllerTest {
     @Autowired lateinit var objectMapper: ObjectMapper
     @MockitoBean lateinit var accountService: AccountService
     @MockitoBean lateinit var accountBootstrapService: AccountBootstrapService
+    @MockitoBean lateinit var bootstrapAuthVerifier: BootstrapAuthVerifier
     @MockitoBean lateinit var idempotencyService: IdempotencyService
 
     @Test
@@ -170,7 +175,9 @@ class AccountControllerTest {
         whenever(accountBootstrapService.upsertInitialAccounts(1L)).thenReturn(responses)
 
         mockMvc.post("/api/accounts/bootstrap") {
-            param("customerId", "1")
+            header("X-Customer-Id", "1")
+            header("X-Customer-Timestamp", "1739942400")
+            header("X-Customer-Signature", "valid-signature")
         }.andExpect {
             status { isOk() }
             jsonPath("$[0].id") { value(101) }
@@ -178,15 +185,78 @@ class AccountControllerTest {
             jsonPath("$[1].id") { value(102) }
             jsonPath("$[1].productCode") { value("CHK001") }
         }
+
+        verify(bootstrapAuthVerifier)
+            .verifyOrThrow("1", "1739942400", "valid-signature")
     }
 
     @Test
-    fun `초기 계좌 upsert 요청에서 customerId가 누락되면 400과 메시지를 반환한다`() {
-        mockMvc.post("/api/accounts/bootstrap")
-            .andExpect {
-                status { isBadRequest() }
-                jsonPath("$.error") { value("요청 파라미터가 누락되었습니다: customerId") }
-            }
+    fun `초기 계좌 upsert 요청에서 X-Customer-Id가 누락되면 400과 메시지를 반환한다`() {
+        doThrow(IllegalArgumentException("요청 헤더가 누락되었습니다: X-Customer-Id"))
+            .whenever(bootstrapAuthVerifier)
+            .verifyOrThrow(null, "1739942400", "valid-signature")
+
+        mockMvc.post("/api/accounts/bootstrap") {
+            header("X-Customer-Timestamp", "1739942400")
+            header("X-Customer-Signature", "valid-signature")
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error") { value("요청 헤더가 누락되었습니다: X-Customer-Id") }
+        }
+
+        verify(accountBootstrapService, never()).upsertInitialAccounts(any())
+    }
+
+    @Test
+    fun `초기 계좌 upsert 요청에서 X-Customer-Timestamp가 누락되면 400과 메시지를 반환한다`() {
+        doThrow(IllegalArgumentException("요청 헤더가 누락되었습니다: X-Customer-Timestamp"))
+            .whenever(bootstrapAuthVerifier)
+            .verifyOrThrow("1", null, "valid-signature")
+
+        mockMvc.post("/api/accounts/bootstrap") {
+            header("X-Customer-Id", "1")
+            header("X-Customer-Signature", "valid-signature")
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error") { value("요청 헤더가 누락되었습니다: X-Customer-Timestamp") }
+        }
+
+        verify(accountBootstrapService, never()).upsertInitialAccounts(any())
+    }
+
+    @Test
+    fun `초기 계좌 upsert 요청에서 X-Customer-Signature가 누락되면 400과 메시지를 반환한다`() {
+        doThrow(IllegalArgumentException("요청 헤더가 누락되었습니다: X-Customer-Signature"))
+            .whenever(bootstrapAuthVerifier)
+            .verifyOrThrow("1", "1739942400", null)
+
+        mockMvc.post("/api/accounts/bootstrap") {
+            header("X-Customer-Id", "1")
+            header("X-Customer-Timestamp", "1739942400")
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error") { value("요청 헤더가 누락되었습니다: X-Customer-Signature") }
+        }
+
+        verify(accountBootstrapService, never()).upsertInitialAccounts(any())
+    }
+
+    @Test
+    fun `초기 계좌 upsert 요청에서 서명이 유효하지 않으면 400과 메시지를 반환한다`() {
+        doThrow(IllegalArgumentException("요청 인증 서명이 유효하지 않습니다"))
+            .whenever(bootstrapAuthVerifier)
+            .verifyOrThrow("1", "1739942400", "invalid-signature")
+
+        mockMvc.post("/api/accounts/bootstrap") {
+            header("X-Customer-Id", "1")
+            header("X-Customer-Timestamp", "1739942400")
+            header("X-Customer-Signature", "invalid-signature")
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error") { value("요청 인증 서명이 유효하지 않습니다") }
+        }
+
+        verify(accountBootstrapService, never()).upsertInitialAccounts(any())
     }
 
     @Test
