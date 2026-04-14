@@ -3,6 +3,8 @@ package com.bankcore.account.controller
 import com.bankcore.account.dto.AccountBalanceChangeRequest
 import com.bankcore.account.dto.AccountCreateRequest
 import com.bankcore.account.dto.AccountResponse
+import com.bankcore.account.security.BootstrapAuthVerifier
+import com.bankcore.account.service.AccountBootstrapService
 import com.bankcore.account.service.AccountService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -18,6 +20,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
 import org.springframework.orm.ObjectOptimisticLockingFailureException
 import org.springframework.web.bind.MethodArgumentNotValidException
+import org.springframework.web.bind.MissingServletRequestParameterException
 import org.springframework.web.bind.annotation.*
 
 @Schema(description = "공통 에러 응답")
@@ -30,7 +33,9 @@ data class ErrorResponse(
 @RestController
 @RequestMapping("/api/accounts")
 class AccountController(
-    private val accountService: AccountService
+    private val accountService: AccountService,
+    private val accountBootstrapService: AccountBootstrapService,
+    private val bootstrapAuthVerifier: BootstrapAuthVerifier
 ) {
     @Operation(summary = "계좌 개설", description = "신규 계좌를 개설합니다")
     @ApiResponses(
@@ -39,6 +44,11 @@ class AccountController(
             ApiResponse(
                 responseCode = "400",
                 description = "요청 값 검증 실패",
+                content = [Content(schema = Schema(implementation = ErrorResponse::class))]
+            ),
+            ApiResponse(
+                responseCode = "404",
+                description = "상품을 찾을 수 없음",
                 content = [Content(schema = Schema(implementation = ErrorResponse::class))]
             ),
             ApiResponse(
@@ -62,6 +72,59 @@ class AccountController(
     ): ResponseEntity<AccountResponse> {
         val response = accountService.createAccount(request)
         return ResponseEntity.status(HttpStatus.CREATED).body(response)
+    }
+
+    @Operation(summary = "초기 계좌 upsert", description = "최초 로그인/재로그인 시 초기 계좌를 upsert 합니다")
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "초기 계좌 upsert 성공"),
+            ApiResponse(
+                responseCode = "400",
+                description = "요청 값 검증 실패",
+                content = [Content(schema = Schema(implementation = ErrorResponse::class))]
+            ),
+            ApiResponse(
+                responseCode = "404",
+                description = "초기화 상품을 찾을 수 없음",
+                content = [Content(schema = Schema(implementation = ErrorResponse::class))]
+            ),
+            ApiResponse(
+                responseCode = "409",
+                description = "동시 요청 충돌",
+                content = [Content(schema = Schema(implementation = ErrorResponse::class))]
+            )
+        ]
+    )
+    @PostMapping("/bootstrap")
+    fun upsertInitialAccounts(
+        @Parameter(
+            name = BootstrapAuthVerifier.CUSTOMER_HEADER,
+            description = "인증된 고객 ID",
+            required = true,
+            `in` = ParameterIn.HEADER,
+            example = "1"
+        )
+        @RequestHeader(name = BootstrapAuthVerifier.CUSTOMER_HEADER, required = false) customerId: String?,
+        @Parameter(
+            name = BootstrapAuthVerifier.TIMESTAMP_HEADER,
+            description = "요청 시각 epoch second",
+            required = true,
+            `in` = ParameterIn.HEADER,
+            example = "1739942400"
+        )
+        @RequestHeader(name = BootstrapAuthVerifier.TIMESTAMP_HEADER, required = false) timestamp: String?,
+        @Parameter(
+            name = BootstrapAuthVerifier.SIGNATURE_HEADER,
+            description = "HMAC-SHA256(customerId:timestamp) hex",
+            required = true,
+            `in` = ParameterIn.HEADER,
+            example = "7f4f5f4f7e5f4f7e5f4f7e5f4f7e5f4f7e5f4f7e5f4f7e5f4f7e5f4f7e5f4f7e"
+        )
+        @RequestHeader(name = BootstrapAuthVerifier.SIGNATURE_HEADER, required = false) signature: String?
+    ): ResponseEntity<List<AccountResponse>> {
+        bootstrapAuthVerifier.verifyOrThrow(customerId, timestamp, signature)
+        val response = accountBootstrapService.upsertInitialAccounts(customerId!!.toLong())
+        return ResponseEntity.ok(response)
     }
 
     @Operation(summary = "계좌 조회", description = "계좌 ID로 계좌 정보를 조회합니다")
@@ -207,18 +270,40 @@ class AccountController(
 
     @ExceptionHandler(NoSuchElementException::class)
     fun handleNotFound(e: NoSuchElementException): ResponseEntity<ErrorResponse> {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ErrorResponse(e.message ?: "Not Found"))
+        val message = if ((e.message ?: "").startsWith("상품을 찾을 수 없습니다")) {
+            "상품을 찾을 수 없습니다"
+        } else {
+            e.message ?: "Not Found"
+        }
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ErrorResponse(message))
     }
 
     @ExceptionHandler(MethodArgumentNotValidException::class)
     fun handleValidation(e: MethodArgumentNotValidException): ResponseEntity<ErrorResponse> {
-        val message = e.bindingResult.fieldErrors.firstOrNull()?.defaultMessage ?: "Bad Request"
+        val prioritizedFieldError = e.bindingResult.fieldErrors.firstOrNull {
+            it.code == "NotNull" || it.code == "NotBlank"
+        } ?: e.bindingResult.fieldErrors.firstOrNull()
+
+        val message = prioritizedFieldError?.defaultMessage
+            ?: e.bindingResult.globalErrors.firstOrNull()?.defaultMessage
+            ?: "Bad Request"
+        return ResponseEntity.badRequest().body(ErrorResponse(message))
+    }
+
+    @ExceptionHandler(jakarta.validation.ConstraintViolationException::class)
+    fun handleConstraintViolation(e: jakarta.validation.ConstraintViolationException): ResponseEntity<ErrorResponse> {
+        val message = e.constraintViolations.firstOrNull()?.message ?: "Bad Request"
         return ResponseEntity.badRequest().body(ErrorResponse(message))
     }
 
     @ExceptionHandler(HttpMessageNotReadableException::class)
     fun handleMessageNotReadable(): ResponseEntity<ErrorResponse> {
-        return ResponseEntity.badRequest().body(ErrorResponse("Bad Request"))
+        return ResponseEntity.badRequest().body(ErrorResponse("요청 본문 형식이 올바르지 않습니다"))
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException::class)
+    fun handleMissingRequestParameter(e: MissingServletRequestParameterException): ResponseEntity<ErrorResponse> {
+        return ResponseEntity.badRequest().body(ErrorResponse("요청 파라미터가 누락되었습니다: ${e.parameterName}"))
     }
 
     @ExceptionHandler(ObjectOptimisticLockingFailureException::class)

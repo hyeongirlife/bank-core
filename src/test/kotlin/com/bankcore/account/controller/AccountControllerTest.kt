@@ -4,12 +4,17 @@ import com.bankcore.account.dto.AccountBalanceChangeRequest
 import com.bankcore.account.dto.AccountCreateRequest
 import com.bankcore.account.dto.AccountResponse
 import com.bankcore.account.entity.AccountStatus
+import com.bankcore.account.security.BootstrapAuthVerifier
+import com.bankcore.account.service.AccountBootstrapService
 import com.bankcore.account.service.AccountService
 import com.bankcore.common.idempotency.IdempotencyService
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.doThrow
 import org.mockito.kotlin.eq
+import org.mockito.kotlin.never
+import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
@@ -27,6 +32,8 @@ class AccountControllerTest {
     @Autowired lateinit var mockMvc: MockMvc
     @Autowired lateinit var objectMapper: ObjectMapper
     @MockitoBean lateinit var accountService: AccountService
+    @MockitoBean lateinit var accountBootstrapService: AccountBootstrapService
+    @MockitoBean lateinit var bootstrapAuthVerifier: BootstrapAuthVerifier
     @MockitoBean lateinit var idempotencyService: IdempotencyService
 
     @Test
@@ -59,22 +66,23 @@ class AccountControllerTest {
     }
 
     @Test
-    fun `존재하지 않는 상품 코드로 요청 시 400을 반환한다`() {
+    fun `존재하지 않는 상품 코드로 요청 시 404를 반환한다`() {
         val request = AccountCreateRequest(customerId = 1L, productCode = "INVALID")
 
         whenever(accountService.createAccount(any()))
-            .thenThrow(IllegalArgumentException("상품을 찾을 수 없습니다: INVALID"))
+            .thenThrow(NoSuchElementException("상품을 찾을 수 없습니다"))
 
         mockMvc.post("/api/accounts") {
             contentType = MediaType.APPLICATION_JSON
             content = objectMapper.writeValueAsString(request)
         }.andExpect {
-            status { isBadRequest() }
+            status { isNotFound() }
+            jsonPath("$.error") { value("상품을 찾을 수 없습니다") }
         }
     }
 
     @Test
-    fun `빈 상품 코드로 요청 시 400을 반환한다`() {
+    fun `빈 상품 코드로 요청 시 400과 검증 메시지를 반환한다`() {
         val request = AccountCreateRequest(customerId = 1L, productCode = "")
 
         mockMvc.post("/api/accounts") {
@@ -82,11 +90,38 @@ class AccountControllerTest {
             content = objectMapper.writeValueAsString(request)
         }.andExpect {
             status { isBadRequest() }
+            jsonPath("$.error") { value("상품 코드는 필수입니다") }
         }
     }
 
     @Test
-    fun `음수 고객 ID로 요청 시 400을 반환한다`() {
+    fun `소문자 상품 코드로 요청 시 400과 검증 메시지를 반환한다`() {
+        val request = AccountCreateRequest(customerId = 1L, productCode = "sav001")
+
+        mockMvc.post("/api/accounts") {
+            contentType = MediaType.APPLICATION_JSON
+            content = objectMapper.writeValueAsString(request)
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error") { value("상품 코드는 대문자/숫자 3~20자리여야 합니다") }
+        }
+    }
+
+    @Test
+    fun `공백 포함 상품 코드로 요청 시 400과 검증 메시지를 반환한다`() {
+        val request = AccountCreateRequest(customerId = 1L, productCode = "SAV 001")
+
+        mockMvc.post("/api/accounts") {
+            contentType = MediaType.APPLICATION_JSON
+            content = objectMapper.writeValueAsString(request)
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error") { value("상품 코드는 대문자/숫자 3~20자리여야 합니다") }
+        }
+    }
+
+    @Test
+    fun `음수 고객 ID로 요청 시 400과 검증 메시지를 반환한다`() {
         val request = AccountCreateRequest(customerId = -1L, productCode = "SAV001")
 
         mockMvc.post("/api/accounts") {
@@ -94,7 +129,134 @@ class AccountControllerTest {
             content = objectMapper.writeValueAsString(request)
         }.andExpect {
             status { isBadRequest() }
+            jsonPath("$.error") { value("고객 ID는 1 이상이어야 합니다") }
         }
+    }
+
+    @Test
+    fun `잘못된 JSON 본문으로 요청 시 400과 본문 형식 오류 메시지를 반환한다`() {
+        mockMvc.post("/api/accounts") {
+            contentType = MediaType.APPLICATION_JSON
+            content = "{invalid-json}"
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error") { value("요청 본문 형식이 올바르지 않습니다") }
+        }
+    }
+
+    @Test
+    fun `초기 계좌 upsert 요청 시 200과 목록을 반환한다`() {
+        val now = LocalDateTime.now()
+        val responses = listOf(
+            AccountResponse(
+                id = 101L,
+                customerId = 1L,
+                accountNumber = "110-123-456789",
+                productCode = "SAV001",
+                productName = "Basic Savings",
+                balance = BigDecimal("0.00"),
+                status = AccountStatus.ACTIVE,
+                openedAt = now,
+                closedAt = null
+            ),
+            AccountResponse(
+                id = 102L,
+                customerId = 1L,
+                accountNumber = "110-987-654321",
+                productCode = "CHK001",
+                productName = "Basic Checking",
+                balance = BigDecimal("0.00"),
+                status = AccountStatus.ACTIVE,
+                openedAt = now,
+                closedAt = null
+            )
+        )
+
+        whenever(accountBootstrapService.upsertInitialAccounts(1L)).thenReturn(responses)
+
+        mockMvc.post("/api/accounts/bootstrap") {
+            header("X-Customer-Id", "1")
+            header("X-Customer-Timestamp", "1739942400")
+            header("X-Customer-Signature", "valid-signature")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$[0].id") { value(101) }
+            jsonPath("$[0].productCode") { value("SAV001") }
+            jsonPath("$[1].id") { value(102) }
+            jsonPath("$[1].productCode") { value("CHK001") }
+        }
+
+        verify(bootstrapAuthVerifier)
+            .verifyOrThrow("1", "1739942400", "valid-signature")
+    }
+
+    @Test
+    fun `초기 계좌 upsert 요청에서 X-Customer-Id가 누락되면 400과 메시지를 반환한다`() {
+        doThrow(IllegalArgumentException("요청 헤더가 누락되었습니다: X-Customer-Id"))
+            .whenever(bootstrapAuthVerifier)
+            .verifyOrThrow(null, "1739942400", "valid-signature")
+
+        mockMvc.post("/api/accounts/bootstrap") {
+            header("X-Customer-Timestamp", "1739942400")
+            header("X-Customer-Signature", "valid-signature")
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error") { value("요청 헤더가 누락되었습니다: X-Customer-Id") }
+        }
+
+        verify(accountBootstrapService, never()).upsertInitialAccounts(any())
+    }
+
+    @Test
+    fun `초기 계좌 upsert 요청에서 X-Customer-Timestamp가 누락되면 400과 메시지를 반환한다`() {
+        doThrow(IllegalArgumentException("요청 헤더가 누락되었습니다: X-Customer-Timestamp"))
+            .whenever(bootstrapAuthVerifier)
+            .verifyOrThrow("1", null, "valid-signature")
+
+        mockMvc.post("/api/accounts/bootstrap") {
+            header("X-Customer-Id", "1")
+            header("X-Customer-Signature", "valid-signature")
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error") { value("요청 헤더가 누락되었습니다: X-Customer-Timestamp") }
+        }
+
+        verify(accountBootstrapService, never()).upsertInitialAccounts(any())
+    }
+
+    @Test
+    fun `초기 계좌 upsert 요청에서 X-Customer-Signature가 누락되면 400과 메시지를 반환한다`() {
+        doThrow(IllegalArgumentException("요청 헤더가 누락되었습니다: X-Customer-Signature"))
+            .whenever(bootstrapAuthVerifier)
+            .verifyOrThrow("1", "1739942400", null)
+
+        mockMvc.post("/api/accounts/bootstrap") {
+            header("X-Customer-Id", "1")
+            header("X-Customer-Timestamp", "1739942400")
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error") { value("요청 헤더가 누락되었습니다: X-Customer-Signature") }
+        }
+
+        verify(accountBootstrapService, never()).upsertInitialAccounts(any())
+    }
+
+    @Test
+    fun `초기 계좌 upsert 요청에서 서명이 유효하지 않으면 400과 메시지를 반환한다`() {
+        doThrow(IllegalArgumentException("요청 인증 서명이 유효하지 않습니다"))
+            .whenever(bootstrapAuthVerifier)
+            .verifyOrThrow("1", "1739942400", "invalid-signature")
+
+        mockMvc.post("/api/accounts/bootstrap") {
+            header("X-Customer-Id", "1")
+            header("X-Customer-Timestamp", "1739942400")
+            header("X-Customer-Signature", "invalid-signature")
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error") { value("요청 인증 서명이 유효하지 않습니다") }
+        }
+
+        verify(accountBootstrapService, never()).upsertInitialAccounts(any())
     }
 
     @Test

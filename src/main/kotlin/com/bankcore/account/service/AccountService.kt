@@ -33,13 +33,15 @@ class AccountService(
 ) {
     @Transactional
     fun createAccount(request: AccountCreateRequest): AccountResponse {
-        return distributedLockService.executeWithLock("account", "${request.customerId}:${request.productCode}") {
-            val product = productRepository.findByCode(request.productCode)
-                ?: throw IllegalArgumentException("상품을 찾을 수 없습니다: ${request.productCode}")
+        val customerId = request.customerId ?: throw IllegalArgumentException("고객 ID는 필수입니다")
+        val normalizedProductCode = request.productCode.trim()
+        return distributedLockService.executeWithLock("account", "$customerId:$normalizedProductCode") {
+            val product = productRepository.findByCode(normalizedProductCode)
+                ?: throw NoSuchElementException("상품을 찾을 수 없습니다")
 
             if (product.maxAccountPerCustomer > 0) {
                 val activeCount = accountRepository.countByCustomerIdAndProductCodeAndStatus(
-                    request.customerId, request.productCode, AccountStatus.ACTIVE
+                    customerId, normalizedProductCode, AccountStatus.ACTIVE
                 )
                 if (activeCount >= product.maxAccountPerCustomer) {
                     throw IllegalStateException("해당 상품의 최대 계좌 개설 수를 초과했습니다")
@@ -47,7 +49,7 @@ class AccountService(
             }
 
             val account = Account(
-                customerId = request.customerId,
+                customerId = customerId,
                 accountNumber = accountNumberGenerator.generate(),
                 product = product,
                 maturityDate = request.maturityDate
